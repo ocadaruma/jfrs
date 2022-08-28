@@ -1,8 +1,7 @@
-use crate::reader::byte_reader::ByteReader;
 use crate::{Version, MAGIC};
+use byteorder::{ReadBytesExt, BE};
 use std::io::{Read, Seek};
 
-mod byte_reader;
 mod v1;
 
 #[derive(Debug)]
@@ -34,8 +33,8 @@ where
         }
 
         let version = Version {
-            major: ByteReader::Raw.read_i16(&mut self.inner)?,
-            minor: ByteReader::Raw.read_i16(&mut self.inner)?,
+            major: self.inner.read_i16::<BE>().map_err(Error::IoError)?,
+            minor: self.inner.read_i16::<BE>().map_err(Error::IoError)?,
         };
 
         match version {

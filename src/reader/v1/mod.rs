@@ -1,9 +1,12 @@
-use crate::reader::byte_reader::{ByteReader, StringType};
+use crate::reader::v1::byte_reader::{ByteReader, StringType};
+use crate::reader::v1::metadata::{Metadata, MetadataReader};
 use crate::reader::{Chunk, Error, Result};
 use std::io::{Read, Seek, SeekFrom};
 
+mod byte_reader;
+mod metadata;
+
 const FEATURES_COMPRESSED_INTS: i32 = 1;
-const EVENT_TYPE_METADATA: i64 = 0;
 
 pub struct ChunkReader<'a, R>(&'a mut R);
 
@@ -24,11 +27,6 @@ impl ChunkHeader {
     fn is_ints_compressed(&self) -> bool {
         self.features & FEATURES_COMPRESSED_INTS != 0
     }
-}
-
-#[derive(Debug)]
-struct Metadata {
-
 }
 
 impl<'a, R> ChunkReader<'a, R>
@@ -52,14 +50,15 @@ where
         } else {
             ByteReader::Raw
         };
-        let metadata = self.read_metadata(&reader)?;
+        let metadata = MetadataReader::wrap(self.0).read_metadata(&reader)?;
+        println!("metadata: {:?}", metadata);
 
         Err(Error::InvalidFormat)
     }
 
     fn read_header(&mut self) -> Result<ChunkHeader> {
         let reader = ByteReader::Raw;
-        
+
         let header = ChunkHeader {
             chunk_size: reader.read_i64(self.0)?,
             constant_pool_offset: reader.read_i64(self.0)?,
@@ -73,35 +72,5 @@ where
         };
 
         Ok(header)
-    }
-
-    fn read_metadata(&mut self, reader: &ByteReader) -> Result<Metadata> {
-        // size
-        reader.read_i32(self.0)?;
-        if reader.read_i64(self.0)? != EVENT_TYPE_METADATA {
-            return Err(Error::InvalidFormat);
-        }
-
-        // start time
-        reader.read_i64(self.0)?;
-        // duration
-        reader.read_i64(self.0)?;
-        // metadata id
-        reader.read_i64(self.0)?;
-
-        let string_count = reader.read_i32(self.0)?;
-        let mut strings = Vec::with_capacity(string_count as usize);
-
-        for _ in 0..string_count {
-            match reader.read_string(self.0)? {
-                StringType::Null => strings.push(None),
-                StringType::Empty => strings.push(Some("".to_string())),
-                StringType::Raw(s) => strings.push(Some(s)),
-                _ => return Err(Error::InvalidString),
-            }
-        }
-        println!("strings: {:?}", strings);
-
-        Err(Error::InvalidFormat)
     }
 }

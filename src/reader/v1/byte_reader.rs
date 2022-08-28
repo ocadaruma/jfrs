@@ -9,7 +9,7 @@ const STRING_ENCODING_UTF8_BYTE_ARRAY: i8 = 3;
 const STRING_ENCODING_CHAR_ARRAY: i8 = 4;
 const STRING_ENCODING_LATIN1_BYTE_ARRAY: i8 = 5;
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum StringType {
     Null,
     Empty,
@@ -68,7 +68,7 @@ impl ByteReader {
                 let c = self.read_i16(r)? as u32;
                 buf.push(char::try_from(c).map_err(|_| Error::InvalidString)?);
             }
-            return Ok(StringType::Raw(buf.iter().collect()))
+            return Ok(StringType::Raw(buf.iter().collect()));
         }
 
         let mut buf = Vec::with_capacity(size);
@@ -79,7 +79,9 @@ impl ByteReader {
             return Ok(StringType::Raw(buf.iter().map(|&c| c as char).collect()));
         }
         if encoding == STRING_ENCODING_UTF8_BYTE_ARRAY {
-            return Ok(StringType::Raw(String::from_utf8(buf).map_err(|_| Error::InvalidString)?))
+            return Ok(StringType::Raw(
+                String::from_utf8(buf).map_err(|_| Error::InvalidString)?,
+            ));
         }
 
         Err(Error::InvalidString)
@@ -101,11 +103,63 @@ impl ByteReader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Cursor;
 
     #[test]
     fn test_read_i64_compressed() {
-        let mut bytes = [0x85u8, 0xb0, 0x03];
-        let mut s: &[u8] = &bytes;
-        assert_eq!(55301, ByteReader::CompressedInts.read_i64(&mut s).unwrap());
+        let bytes = [0x85u8, 0xb0, 0x3];
+        assert_eq!(
+            55301,
+            ByteReader::CompressedInts
+                .read_i64(&mut Cursor::new(bytes))
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_read_string_null() {
+        let bytes = [STRING_ENCODING_NULL as u8];
+        assert_eq!(
+            StringType::Null,
+            ByteReader::CompressedInts
+                .read_string(&mut Cursor::new(bytes))
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_read_string_empty() {
+        let bytes = [STRING_ENCODING_EMPTY_STRING as u8];
+        assert_eq!(
+            StringType::Empty,
+            ByteReader::CompressedInts
+                .read_string(&mut Cursor::new(bytes))
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_read_string_constant_pool() {
+        let mut bytes = vec![STRING_ENCODING_CONSTANT_POOL as u8];
+        bytes.append(&mut vec![0x85, 0xb0, 0x3]);
+        assert_eq!(
+            StringType::ConstantPool(55301),
+            ByteReader::CompressedInts
+                .read_string(&mut Cursor::new(bytes))
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_read_string_utf8() {
+        let mut bytes = vec![STRING_ENCODING_UTF8_BYTE_ARRAY as u8];
+        bytes.push(11); // length of "hello,world" in varint encoding
+        bytes.extend_from_slice("hello,world".as_bytes());
+        assert_eq!(
+            StringType::Raw("hello,world".to_string()),
+            ByteReader::CompressedInts
+                .read_string(&mut Cursor::new(bytes))
+                .unwrap()
+        );
     }
 }
