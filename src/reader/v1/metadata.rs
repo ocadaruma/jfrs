@@ -1,21 +1,22 @@
 use crate::reader::v1::byte_reader::{ByteReader, StringType};
 use crate::reader::{Error, Result};
+use std::collections::HashMap;
 use std::io::Read;
 
 const EVENT_TYPE_METADATA: i64 = 0;
 
 #[derive(Debug)]
-enum ElementType {
-    Root(RootElement),
-    Metadata(MetadataElement),
+enum ElementType<'st> {
+    Root(RootElement<'st>),
+    Metadata(MetadataElement<'st>),
     Region(RegionElement),
-    Class(ClassElement),
-    Field(FieldElement),
-    Annotation(AnnotationElement),
-    Setting(SettingElement),
+    Class(ClassElement<'st>),
+    Field(FieldElement<'st>),
+    Annotation(AnnotationElement<'st>),
+    Setting(SettingElement<'st>),
 }
 
-impl ElementType {
+impl<'st> ElementType<'st> {
     fn try_new(name: &String) -> Result<Self> {
         match name.as_str() {
             "metadata" => Ok(ElementType::Metadata(MetadataElement::default())),
@@ -28,7 +29,7 @@ impl ElementType {
         }
     }
 
-    fn append_child(&mut self, child: ElementType) {
+    fn append_child(&mut self, child: ElementType<'st>) {
         match self {
             ElementType::Root(e) => match child {
                 ElementType::Metadata(m) => e.metadata = Some(m),
@@ -57,43 +58,81 @@ impl ElementType {
         }
     }
 
-    fn set_attribute(&mut self, key: &String, value: &String) {
-
+    fn set_attribute(&mut self, key: &'st String, value: &'st String) -> Result<()> {
+        match self {
+            ElementType::Class(c) => match key.as_str() {
+                "id" => c.class_id = value.parse().map_err(|_| Error::InvalidFormat)?,
+                "name" => c.type_identifier = Some(value),
+                "superType" => c.super_type = Some(value),
+                "simpleType" => {
+                    c.simple_type = Some(value.parse().map_err(|_| Error::InvalidFormat)?)
+                }
+                _ => {}
+            },
+            ElementType::Field(f) => match key.as_str() {
+                "name" => f.field_identifier = Some(value),
+                "class" => f.class_id = value.parse().map_err(|_| Error::InvalidFormat)?,
+                "constantPool" => {
+                    f.constant_pool = Some(value.parse().map_err(|_| Error::InvalidFormat)?)
+                }
+                "dimension" => f.dimension = Some(value.parse().map_err(|_| Error::InvalidFormat)?),
+                _ => {}
+            },
+            ElementType::Annotation(a) => match key.as_str() {
+                "class" => a.class_id = value.parse().map_err(|_| Error::InvalidFormat)?,
+                _ => {
+                    a.attributes.insert(key, value);
+                }
+            },
+            _ => {}
+        }
+        Ok(())
     }
 }
 
 #[derive(Debug, Default)]
-struct RootElement {
-    metadata: Option<MetadataElement>,
+struct RootElement<'st> {
+    metadata: Option<MetadataElement<'st>>,
     region: Option<RegionElement>,
 }
 
 #[derive(Debug, Default)]
-struct MetadataElement {
-    classes: Vec<ClassElement>,
+struct MetadataElement<'st> {
+    classes: Vec<ClassElement<'st>>,
 }
 
 #[derive(Debug, Default)]
 struct RegionElement {}
 
 #[derive(Debug, Default)]
-struct ClassElement {
-    annotations: Vec<AnnotationElement>,
-    fields: Vec<FieldElement>,
-    setting: Option<SettingElement>,
+struct ClassElement<'st> {
+    annotations: Vec<AnnotationElement<'st>>,
+    fields: Vec<FieldElement<'st>>,
+    setting: Option<SettingElement<'st>>,
+    class_id: i64,
+    type_identifier: Option<&'st str>,
+    super_type: Option<&'st str>,
+    simple_type: Option<bool>,
 }
 
 #[derive(Debug, Default)]
-struct FieldElement {
-    annotations: Vec<AnnotationElement>,
+struct FieldElement<'st> {
+    annotations: Vec<AnnotationElement<'st>>,
+    field_identifier: Option<&'st String>,
+    class_id: i64,
+    constant_pool: Option<bool>,
+    dimension: Option<i32>,
 }
 
 #[derive(Debug, Default)]
-struct AnnotationElement {}
+struct AnnotationElement<'st> {
+    class_id: i64,
+    attributes: HashMap<&'st String, &'st String>,
+}
 
 #[derive(Debug, Default)]
-struct SettingElement {
-    annotations: Vec<AnnotationElement>,
+struct SettingElement<'st> {
+    annotations: Vec<AnnotationElement<'st>>,
 }
 
 #[derive(Debug)]
@@ -167,17 +206,17 @@ where
         Ok(Metadata { string_table })
     }
 
-    fn read_element(
+    fn read_element<'st>(
         &mut self,
         reader: &ByteReader,
-        string_table: &StringTable,
-        mut current_element: ElementType,
-    ) -> Result<ElementType> {
+        string_table: &'st StringTable,
+        mut current_element: ElementType<'st>,
+    ) -> Result<ElementType<'st>> {
         let attribute_count = reader.read_i32(self.0)?;
         for _ in 0..attribute_count {
             let key = string_table.get(reader.read_i32(self.0)?)?;
             let value = string_table.get(reader.read_i32(self.0)?)?;
-            current_element.set_attribute(key, value);
+            current_element.set_attribute(key, value)?;
         }
 
         let children_count = reader.read_i32(self.0)?;
