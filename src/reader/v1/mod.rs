@@ -1,14 +1,23 @@
 use crate::reader::v1::byte_reader::{ByteReader, StringType};
-use crate::reader::v1::metadata::{Metadata, MetadataReader};
-use crate::reader::{Chunk, Error, Result};
+use crate::reader::v1::metadata::{Metadata, MetadataReader, StringTable};
+use crate::reader::{Error, Result};
 use std::io::{Read, Seek, SeekFrom};
 
 mod byte_reader;
 mod metadata;
+mod type_descriptor;
+mod value_descriptor;
 
 const FEATURES_COMPRESSED_INTS: i32 = 1;
 
 pub struct ChunkReader<'a, R>(&'a mut R);
+
+#[derive(Debug)]
+pub struct Chunk {
+    string_table: StringTable,
+    // constant_pools: ConstantPools,
+    // events: Events,
+}
 
 #[derive(Debug)]
 struct ChunkHeader {
@@ -39,7 +48,7 @@ where
 
     pub fn read(&mut self) -> Result<Chunk> {
         let header = self.read_header()?;
-        println!("header: {:?}", header);
+        println!("header: {:#?}", header);
 
         self.0
             .seek(SeekFrom::Start(header.metadata_offset as u64))
@@ -51,7 +60,7 @@ where
             ByteReader::Raw
         };
         let metadata = MetadataReader::wrap(self.0).read_metadata(&reader)?;
-        println!("metadata: {:?}", metadata);
+        println!("metadata: {:#?}", metadata);
 
         Err(Error::InvalidFormat)
     }

@@ -14,7 +14,9 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-pub struct Chunk {}
+pub enum ChunkVersion {
+    V1(v1::Chunk),
+}
 
 pub struct JfrReader<R> {
     inner: R,
@@ -24,7 +26,7 @@ impl<R> JfrReader<R>
 where
     R: Read + Seek,
 {
-    pub fn read_chunk(&mut self) -> Result<Chunk> {
+    pub fn read_chunk(&mut self) -> Result<v1::Chunk> {
         let mut magic = [0u8; 4];
         self.inner.read_exact(&mut magic).map_err(Error::IoError)?;
 
@@ -56,7 +58,7 @@ mod tests {
 
     #[test]
     fn test_read_chunk() {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-data/profiler-wall.jfr");
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-data/recording.jfr");
         let mut reader = JfrReader::new(File::open(path).unwrap());
 
         assert!(reader.read_chunk().is_err());
