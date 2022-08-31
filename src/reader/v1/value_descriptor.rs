@@ -8,17 +8,17 @@ use std::io::Read;
 use std::process::id;
 
 #[derive(Debug)]
-pub enum ValueDescriptor<'cp> {
+pub enum ValueDescriptor {
     Primitive(Primitive),
-    Object(Object<'cp>),
-    Array(Vec<ValueDescriptor<'cp>>),
-    ConstantPool(&'cp ValueDescriptor<'cp>),
+    Object(Object),
+    Array(Vec<ValueDescriptor>),
+    ConstantPool(i64, i64),
 }
 
 #[derive(Debug)]
-pub struct Object<'cp> {
+pub struct Object {
     pub class_id: i64,
-    pub fields: Vec<ValueDescriptor<'cp>>,
+    pub fields: Vec<ValueDescriptor>,
 }
 
 #[derive(Debug)]
@@ -35,13 +35,12 @@ pub enum Primitive {
     String(String),
 }
 
-pub fn read_value<'cp, R>(
+pub fn read_value<R>(
     r: &mut R,
     reader: &ByteReader,
     class_id: i64,
     type_pool: &TypePool<'_>,
-    constant_pool: &'cp ConstantPool<'cp>,
-) -> Result<ValueDescriptor<'cp>>
+) -> Result<ValueDescriptor>
 where
     R: Read,
 {
@@ -96,10 +95,7 @@ where
                 ))),
                 StringType::Raw(s) => Ok(ValueDescriptor::Primitive(Primitive::String(s))),
                 StringType::ConstantPool(idx) => {
-                    let s = constant_pool
-                        .get(type_desc.class_id, idx)
-                        .ok_or(Error::InvalidFormat)?;
-                    Ok(ValueDescriptor::ConstantPool(s))
+                    Ok(ValueDescriptor::ConstantPool(type_desc.class_id, idx))
                 }
             };
         }
@@ -116,35 +112,24 @@ where
             let count = reader.read_i32(r)?;
             for _ in 0..count {
                 if field_desc.constant_pool {
-                    let c = constant_pool
-                        .get(field_desc.class_id, reader.read_i64(r)?)
-                        .ok_or(Error::InvalidFormat)?;
-                    elems.push(ValueDescriptor::ConstantPool(c));
-                } else {
-                    elems.push(read_value(
-                        r,
-                        reader,
+                    elems.push(ValueDescriptor::ConstantPool(
                         field_desc.class_id,
-                        type_pool,
-                        constant_pool,
-                    )?);
+                        reader.read_i64(r)?,
+                    ));
+                } else {
+                    elems.push(read_value(r, reader, field_desc.class_id, type_pool)?);
                 }
             }
             obj.fields.push(ValueDescriptor::Array(elems));
         } else {
             if field_desc.constant_pool {
-                let c = constant_pool
-                    .get(field_desc.class_id, reader.read_i64(r)?)
-                    .ok_or(Error::InvalidFormat)?;
-                obj.fields.push(ValueDescriptor::ConstantPool(c));
-            } else {
-                obj.fields.push(read_value(
-                    r,
-                    reader,
+                obj.fields.push(ValueDescriptor::ConstantPool(
                     field_desc.class_id,
-                    type_pool,
-                    constant_pool,
-                )?);
+                    reader.read_i64(r)?,
+                ));
+            } else {
+                obj.fields
+                    .push(read_value(r, reader, field_desc.class_id, type_pool)?);
             }
         }
     }

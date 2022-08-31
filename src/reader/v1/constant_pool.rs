@@ -9,17 +9,17 @@ use std::io::{Read, Seek, SeekFrom};
 const EVENT_TYPE_CONSTANT_POOL: i64 = 1;
 
 #[derive(Debug, Default)]
-struct PerTypePool<'cp> {
-    inner: HashMap<i64, ValueDescriptor<'cp>>,
+struct PerTypePool {
+    inner: HashMap<i64, ValueDescriptor>,
 }
 
 #[derive(Debug, Default)]
-pub struct ConstantPool<'cp> {
-    inner: HashMap<i64, PerTypePool<'cp>>,
+pub struct ConstantPool {
+    inner: HashMap<i64, PerTypePool>,
 }
 
-impl<'cp> ConstantPool<'cp> {
-    pub fn register(&mut self, class_id: i64, constant_index: i64, value: ValueDescriptor<'cp>) {
+impl ConstantPool {
+    pub fn register(&mut self, class_id: i64, constant_index: i64, value: ValueDescriptor) {
         self.inner
             .entry(class_id)
             .or_insert(PerTypePool::default())
@@ -27,7 +27,7 @@ impl<'cp> ConstantPool<'cp> {
             .insert(constant_index, value);
     }
 
-    pub fn get(&self, class_id: i64, constant_index: i64) -> Option<&ValueDescriptor<'cp>> {
+    pub fn get(&self, class_id: i64, constant_index: i64) -> Option<&ValueDescriptor> {
         self.inner
             .get(&class_id)
             .and_then(|p| p.inner.get(&constant_index))
@@ -44,12 +44,12 @@ where
         Self(inner)
     }
 
-    pub fn read_constant_pool<'cp>(
+    pub fn read_constant_pool(
         &mut self,
         reader: &ByteReader,
         header: &ChunkHeader,
         type_pool: &TypePool<'_>,
-    ) -> Result<ConstantPool<'cp>> {
+    ) -> Result<ConstantPool> {
         let mut constant_pool = ConstantPool::default();
 
         let mut offset = 0;
@@ -65,10 +65,10 @@ where
         Ok(constant_pool)
     }
 
-    fn read_constant_pool_event<'cp>(
+    fn read_constant_pool_event(
         &mut self,
         reader: &ByteReader,
-        constant_pool: &'cp mut ConstantPool<'cp>,
+        constant_pool: &mut ConstantPool,
         type_pool: &TypePool<'_>,
     ) -> Result<i64> {
         // size
@@ -93,7 +93,7 @@ where
 
             for _ in 0..constant_count {
                 let constant_index = reader.read_i64(self.0)?;
-                let value = read_value(self.0, reader, class_id, type_pool, constant_pool)?;
+                let value = read_value(self.0, reader, class_id, type_pool)?;
                 constant_pool.register(class_id, constant_index, value);
             }
         }

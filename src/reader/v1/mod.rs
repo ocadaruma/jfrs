@@ -1,4 +1,5 @@
 use crate::reader::v1::byte_reader::{ByteReader, StringType};
+use crate::reader::v1::constant_pool::ConstantPoolReader;
 use crate::reader::v1::metadata::{Metadata, MetadataReader, StringTable};
 use crate::reader::{Error, Result};
 use std::io::{Read, Seek, SeekFrom};
@@ -7,6 +8,7 @@ mod byte_reader;
 mod constant_pool;
 mod metadata;
 mod type_descriptor;
+mod types;
 mod value_descriptor;
 
 const FEATURES_COMPRESSED_INTS: i32 = 1;
@@ -60,8 +62,14 @@ where
         } else {
             ByteReader::Raw
         };
-        let metadata = MetadataReader::wrap(self.0).read_metadata(&reader)?;
-        println!("metadata: {:#?}", metadata);
+
+        let mut meta_reader = MetadataReader::wrap(self.0);
+        let metadata = meta_reader.read_metadata(&reader)?;
+        let type_pool = meta_reader.read_types(&reader, &metadata)?;
+        println!("type_pool: {:#?}", type_pool);
+        let constant_pool =
+            ConstantPoolReader::wrap(self.0).read_constant_pool(&reader, &header, &type_pool)?;
+        println!("constant_pool: {:#?}", constant_pool);
 
         Err(Error::InvalidFormat)
     }

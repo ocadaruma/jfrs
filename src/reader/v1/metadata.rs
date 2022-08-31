@@ -195,24 +195,31 @@ where
 
         let string_table = StringTable(strings);
 
+        Ok(Metadata { string_table })
+    }
+
+    pub fn read_types<'st>(
+        &mut self,
+        reader: &ByteReader,
+        metadata: &'st Metadata,
+    ) -> Result<TypePool<'st>> {
         let mut class_name_map = HashMap::new();
         // we don't care root element name
         reader.read_i32(self.0)?;
         let root_element = self.read_element(
             reader,
-            &string_table,
+            &metadata.string_table,
             &mut class_name_map,
             ElementType::Root(RootElement::default()),
         )?;
 
-        // println!("root: {:?}", root_element);
         let type_pool = if let ElementType::Root(root) = root_element {
             self.declare_types(root, class_name_map)?
         } else {
             return Err(Error::InvalidFormat);
         };
-        println!("type_pool: {:#?}", type_pool);
-        Ok(Metadata { string_table })
+
+        Ok(type_pool)
     }
 
     fn read_element<'st>(

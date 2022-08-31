@@ -58,7 +58,7 @@ mod tests {
 
     #[test]
     fn test_read_chunk() {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-data/recording.jfr");
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-data/profiler-wall.jfr");
         let mut reader = JfrReader::new(File::open(path).unwrap());
 
         assert!(reader.read_chunk().is_err());
