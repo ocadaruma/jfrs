@@ -13,6 +13,10 @@ impl<'st> TypePool<'st> {
     pub fn register(&mut self, class_id: i64, desc: TypeDescriptor<'st>) {
         self.inner.insert(class_id, desc);
     }
+
+    pub fn get(&self, class_id: i64) -> Option<&TypeDescriptor<'st>> {
+        self.inner.get(&class_id)
+    }
 }
 
 #[derive(Debug)]

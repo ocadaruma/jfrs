@@ -4,6 +4,7 @@ use crate::reader::{Error, Result};
 use std::io::{Read, Seek, SeekFrom};
 
 mod byte_reader;
+mod constant_pool;
 mod metadata;
 mod type_descriptor;
 mod value_descriptor;

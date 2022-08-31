@@ -49,6 +49,14 @@ impl ByteReader {
         }
     }
 
+    pub fn read_f32(&self, r: &mut impl Read) -> Result<f32> {
+        ReadBytesExt::read_f32::<BE>(r).map_err(Error::IoError)
+    }
+
+    pub fn read_f64(&self, r: &mut impl Read) -> Result<f64> {
+        ReadBytesExt::read_f64::<BE>(r).map_err(Error::IoError)
+    }
+
     pub fn read_string(&self, r: &mut impl Read) -> Result<StringType> {
         let encoding = self.read_i8(r)?;
         if encoding == STRING_ENCODING_NULL {
