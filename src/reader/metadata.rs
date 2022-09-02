@@ -243,131 +243,129 @@ impl Metadata {
         class_name_map: HashMap<i64, &str>,
     ) -> Result<TypePool> {
         let mut pool = TypePool::default();
-        if let Some(classes) = root_element.metadata.map(|m| m.classes) {
-            for class_element in classes {
-                let mut desc = TypeDescriptor {
-                    class_id: class_element.class_id,
-                    name: Rc::from(class_element.type_identifier.ok_or(Error::InvalidFormat)?),
-                    super_type: class_element.super_type.map(Rc::from),
-                    simple_type: class_element.simple_type.unwrap_or(false),
-                    fields: vec![],
+        let classes = match root_element.metadata {
+            Some(m) => m.classes,
+            None => return Ok(pool),
+        };
+
+        for class_element in classes {
+            let mut desc = TypeDescriptor {
+                class_id: class_element.class_id,
+                name: Rc::from(class_element.type_identifier.ok_or(Error::InvalidFormat)?),
+                super_type: class_element.super_type.map(Rc::from),
+                simple_type: class_element.simple_type.unwrap_or(false),
+                fields: vec![],
+                label: None,
+                description: None,
+                experimental: false,
+                category: vec![],
+            };
+
+            for annot in class_element.annotations {
+                Self::resolve_class_annotation(&mut desc, &annot, &class_name_map)?;
+            }
+
+            for field in class_element.fields {
+                let mut field_desc = FieldDescriptor {
+                    class_id: field.class_id,
+                    name: Rc::from(field.field_identifier.ok_or(Error::InvalidFormat)?),
                     label: None,
                     description: None,
                     experimental: false,
-                    category: vec![],
+                    constant_pool: field.constant_pool.unwrap_or(false),
+                    array_type: field.dimension.unwrap_or(0) > 0,
+                    unsigned: false,
+                    unit: None,
+                    tick_unit: None,
                 };
 
-                for annot in class_element.annotations {
-                    if let Some(&name) = class_name_map.get(&annot.class_id) {
-                        match name {
-                            "jdk.jfr.Label" => {
-                                desc.label = annot.attributes.get("value").copied().map(Rc::from)
-                            }
-                            "jdk.jfr.Description" => {
-                                desc.description =
-                                    annot.attributes.get("value").copied().map(Rc::from)
-                            }
-                            "jdk.jfr.Experimental" => desc.experimental = true,
-                            "jdk.jfr.Category" => {
-                                let mut idx = 0;
-                                loop {
-                                    if let Some(&v) =
-                                        annot.attributes.get(format!("value-{}", idx).as_str())
-                                    {
-                                        desc.category.push(Rc::from(v));
-                                    } else {
-                                        break;
-                                    }
-                                    idx += 1;
-                                }
-                            }
+                for annot in field.annotations {
+                    Self::resolve_field_annotation(&mut field_desc, &annot, &class_name_map)?;
+                }
+                desc.fields.push(field_desc);
+            }
+
+            pool.register(class_element.class_id, desc);
+        }
+
+        Ok(pool)
+    }
+
+    fn resolve_class_annotation(
+        desc: &mut TypeDescriptor,
+        annot: &AnnotationElement<'_>,
+        class_name_map: &HashMap<i64, &str>,
+    ) -> Result<()> {
+        if let Some(&name) = class_name_map.get(&annot.class_id) {
+            match name {
+                "jdk.jfr.Label" => {
+                    desc.label = annot.attributes.get("value").copied().map(Rc::from)
+                }
+                "jdk.jfr.Description" => {
+                    desc.description = annot.attributes.get("value").copied().map(Rc::from)
+                }
+                "jdk.jfr.Experimental" => desc.experimental = true,
+                "jdk.jfr.Category" => {
+                    let mut idx = 0;
+                    loop {
+                        if let Some(&v) = annot.attributes.get(format!("value-{}", idx).as_str()) {
+                            desc.category.push(Rc::from(v));
+                        } else {
+                            break;
+                        }
+                        idx += 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn resolve_field_annotation(
+        desc: &mut FieldDescriptor,
+        annot: &AnnotationElement<'_>,
+        class_name_map: &HashMap<i64, &str>,
+    ) -> Result<()> {
+        if let Some(&name) = class_name_map.get(&annot.class_id) {
+            match name {
+                "jdk.jfr.Label" => {
+                    desc.label = annot.attributes.get("value").copied().map(Rc::from)
+                }
+                "jdk.jfr.Description" => {
+                    desc.description = annot.attributes.get("value").copied().map(Rc::from)
+                }
+                "jdk.jfr.Experimental" => desc.experimental = true,
+                "jdk.jfr.Unsigned" => desc.unsigned = true,
+                "jdk.jfr.MemoryAmount" | "jdk.jfr.DataAmount" => desc.unit = Some(Unit::Byte),
+                "jdk.jfr.Percentage" => desc.unit = Some(Unit::PercentUnity),
+                "jdk.jfr.MemoryAddress" => desc.unit = Some(Unit::AddressUnity),
+                "jdk.jfr.Timespan" => {
+                    if let Some(&v) = annot.attributes.get("value") {
+                        match v {
+                            "TICKS" => desc.tick_unit = Some(TickUnit::Timespan),
+                            "NANOSECONDS" => desc.unit = Some(Unit::Nanosecond),
+                            "MILLISECONDS" => desc.unit = Some(Unit::Millisecond),
+                            "SECONDS" => desc.unit = Some(Unit::Second),
                             _ => {}
                         }
                     }
                 }
-
-                for field in class_element.fields {
-                    let mut field_desc = FieldDescriptor {
-                        class_id: field.class_id,
-                        name: Rc::from(field.field_identifier.ok_or(Error::InvalidFormat)?),
-                        label: None,
-                        description: None,
-                        experimental: false,
-                        constant_pool: field.constant_pool.unwrap_or(false),
-                        array_type: field.dimension.unwrap_or(0) > 0,
-                        unsigned: false,
-                        unit: None,
-                        tick_unit: None,
-                    };
-
-                    for annot in field.annotations {
-                        if let Some(&name) = class_name_map.get(&annot.class_id) {
-                            match name {
-                                "jdk.jfr.Label" => {
-                                    field_desc.label =
-                                        annot.attributes.get("value").copied().map(Rc::from)
-                                }
-                                "jdk.jfr.Description" => {
-                                    field_desc.description =
-                                        annot.attributes.get("value").copied().map(Rc::from)
-                                }
-                                "jdk.jfr.Experimental" => field_desc.experimental = true,
-                                "jdk.jfr.Unsigned" => field_desc.unsigned = true,
-                                "jdk.jfr.MemoryAmount" | "jdk.jfr.DataAmount" => {
-                                    field_desc.unit = Some(Unit::Byte)
-                                }
-                                "jdk.jfr.Percentage" => field_desc.unit = Some(Unit::PercentUnity),
-                                "jdk.jfr.MemoryAddress" => {
-                                    field_desc.unit = Some(Unit::AddressUnity)
-                                }
-                                "jdk.jfr.Timespan" => {
-                                    if let Some(&v) = annot.attributes.get("value") {
-                                        match v {
-                                            "TICKS" => {
-                                                field_desc.tick_unit = Some(TickUnit::Timespan)
-                                            }
-                                            "NANOSECONDS" => {
-                                                field_desc.unit = Some(Unit::Nanosecond)
-                                            }
-                                            "MILLISECONDS" => {
-                                                field_desc.unit = Some(Unit::Millisecond)
-                                            }
-                                            "SECONDS" => field_desc.unit = Some(Unit::Second),
-                                            _ => {}
-                                        }
-                                    }
-                                }
-                                "jdk.jfr.Frequency" => field_desc.unit = Some(Unit::Hz),
-                                "jdk.jfr.Timestamp" => {
-                                    if let Some(&v) = annot.attributes.get("value") {
-                                        match v {
-                                            "TICKS" => {
-                                                field_desc.tick_unit = Some(TickUnit::Timestamp)
-                                            }
-                                            "NANOSECONDS_SINCE_EPOCH" => {
-                                                field_desc.unit = Some(Unit::EpochNano)
-                                            }
-                                            "MILLISECONDS_SINCE_EPOCH" => {
-                                                field_desc.unit = Some(Unit::EpochMilli)
-                                            }
-                                            "SECONDS_SINCE_EPOCH" => {
-                                                field_desc.unit = Some(Unit::EpochSecond)
-                                            }
-                                            _ => {}
-                                        }
-                                    }
-                                }
-                                _ => {}
-                            }
+                "jdk.jfr.Frequency" => desc.unit = Some(Unit::Hz),
+                "jdk.jfr.Timestamp" => {
+                    if let Some(&v) = annot.attributes.get("value") {
+                        match v {
+                            "TICKS" => desc.tick_unit = Some(TickUnit::Timestamp),
+                            "NANOSECONDS_SINCE_EPOCH" => desc.unit = Some(Unit::EpochNano),
+                            "MILLISECONDS_SINCE_EPOCH" => desc.unit = Some(Unit::EpochMilli),
+                            "SECONDS_SINCE_EPOCH" => desc.unit = Some(Unit::EpochSecond),
+                            _ => {}
                         }
                     }
-                    desc.fields.push(field_desc);
                 }
-
-                pool.register(class_element.class_id, desc);
+                _ => {}
             }
         }
-
-        Ok(pool)
+        Ok(())
     }
 }

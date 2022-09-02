@@ -3,9 +3,9 @@
 use crate::reader::byte_stream::{ByteStream, StringType};
 use crate::reader::metadata::Metadata;
 
+use crate::reader::type_descriptor::{FieldDescriptor, TypeDescriptor};
 use crate::reader::{Error, Result};
 use std::io::{Read, Seek};
-use crate::reader::type_descriptor::{FieldDescriptor, TypeDescriptor};
 
 #[derive(Debug)]
 pub enum ValueDescriptor {
@@ -55,12 +55,12 @@ impl ValueDescriptor {
     fn try_read_field_single<T: Read>(
         stream: &mut ByteStream<T>,
         field_desc: &FieldDescriptor,
-        metadata: &Metadata
+        metadata: &Metadata,
     ) -> Result<ValueDescriptor> {
         if field_desc.constant_pool {
             Ok(ValueDescriptor::ConstantPool {
                 class_id: field_desc.class_id,
-                constant_index: stream.read_i64()?
+                constant_index: stream.read_i64()?,
             })
         } else {
             Self::try_new(stream, field_desc.class_id, metadata)

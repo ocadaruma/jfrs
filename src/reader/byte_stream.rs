@@ -92,7 +92,7 @@ impl<T: Read> ByteStream<T> {
     pub fn read_char(&mut self) -> Result<char> {
         let i = match self.int_encoding {
             IntEncoding::Raw => self.read_i16()? as u32,
-            IntEncoding::Compressed => self.read_var_i64()? as u32
+            IntEncoding::Compressed => self.read_var_i64()? as u32,
         };
         char::try_from(i).map_err(Error::InvalidChar)
     }
