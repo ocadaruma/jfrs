@@ -1,17 +1,17 @@
 //! Module to read JFR files and parse as Rust data structures.
 
-use std::arch::aarch64::vreinterpret_u8_f64;
+use crate::reader::byte_stream::{ByteStream, IntEncoding};
+use crate::reader::constant_pool::ConstantPool;
+use crate::reader::metadata::Metadata;
+use crate::{Version, MAGIC, VERSION_1, VERSION_2};
+use byteorder::{ReadBytesExt, BE};
 use std::io;
-use crate::{MAGIC, Version, VERSION_1, VERSION_2};
-use byteorder::{BE, ReadBytesExt};
 use std::io::{BufReader, Read, Seek};
 use std::marker::PhantomData;
-use crate::reader::byte_stream::{ByteStream, IntEncoding};
 
-mod v1;
 mod byte_stream;
-mod metadata;
 mod constant_pool;
+mod metadata;
 mod type_descriptor;
 mod value_descriptor;
 
@@ -36,7 +36,7 @@ pub struct ChunkHeader {
     start_ticks: i64,
     ticks_per_second: i64,
     features: i32,
-    body_start_position: u64,
+    absolute_chunk_start_position: u64,
 }
 
 impl ChunkHeader {
@@ -51,11 +51,21 @@ impl ChunkHeader {
             IntEncoding::Raw
         }
     }
+
+    fn absolute_metadata_start_position(&self) -> u64 {
+        self.absolute_chunk_start_position + self.metadata_offset as u64
+    }
+
+    fn absolute_body_start_position(&self) -> u64 {
+        self.absolute_chunk_start_position + Self::HEADER_SIZE
+    }
 }
 
 #[derive(Debug)]
 pub struct Chunk {
-    // constant_pool: ConstantPool
+    header: ChunkHeader,
+    metadata: Metadata,
+    constant_pool: ConstantPool,
 }
 
 pub struct JfrReader<T> {
@@ -68,7 +78,10 @@ where
     T: Read + Seek,
 {
     pub fn new(inner: T) -> Self {
-        Self { stream: ByteStream::new(inner), chunk_start_position: 0 }
+        Self {
+            stream: ByteStream::new(inner),
+            chunk_start_position: 0,
+        }
     }
 
     pub fn next(&mut self) -> Option<Result<Chunk>> {
@@ -126,11 +139,19 @@ where
     fn read_chunk(&mut self) -> Result<Chunk> {
         let header = self.read_chunk_header()?;
 
-        // update to next chunk start
-        self.chunk_start_position += header.chunk_size as u64;
         self.stream.set_int_encoding(header.int_encoding());
 
-        Err(Error::InvalidFormat)
+        let metadata = Metadata::try_new(&mut self.stream, &header)?;
+        let constant_pool = ConstantPool::try_new(&mut self.stream, &header, &metadata)?;
+
+        // update to next chunk start
+        self.chunk_start_position += header.chunk_size as u64;
+
+        Ok(Chunk {
+            header,
+            metadata,
+            constant_pool,
+        })
     }
 
     fn read_chunk_header(&mut self) -> Result<ChunkHeader> {
@@ -143,7 +164,7 @@ where
             start_ticks: self.stream.read_i64()?,
             ticks_per_second: self.stream.read_i64()?,
             features: self.stream.read_i32()?,
-            body_start_position: self.chunk_start_position + ChunkHeader::HEADER_SIZE,
+            absolute_chunk_start_position: self.chunk_start_position,
         })
     }
 }
@@ -153,7 +174,10 @@ pub struct EventIterator<'a, T> {
     stream: &'a mut ByteStream<T>,
 }
 
-impl<'a, T> Iterator for EventIterator<'a, T> where T: Read + Seek {
+impl<'a, T> Iterator for EventIterator<'a, T>
+where
+    T: Read + Seek,
+{
     type Item = ();
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -174,9 +198,11 @@ mod tests {
         let mut reader = JfrReader::new(File::open(path).unwrap());
 
         while let Some(chunk) = reader.next() {
-            for event in reader.events(chunk.unwrap()) {
-            }
+            let chunk = chunk.unwrap();
+            // println!("header: {:#?}", chunk.header);
+            // println!("metadata: {:#?}", chunk.metadata);
+            // println!("constant pool: {:#?}", chunk.constant_pool);
+            // for event in reader.events(chunk.unwrap()) {}
         }
-
     }
 }

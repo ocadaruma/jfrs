@@ -2,16 +2,35 @@
 //! TypeDescriptor defines the "schema" of types.
 //! Event and ConstantPool values are parsed based on declared TypeDescriptor.
 
+use crate::reader::byte_stream::{ByteStream, StringType};
 use crate::reader::{Error, Result};
 use std::collections::HashMap;
 use std::io::Read;
-use crate::reader::byte_stream::{ByteStream, StringType};
+
+/// Index to the string inside string table
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct StringIndex(pub i32);
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct StringReference<'st> {
+    pub index: StringIndex,
+    pub string: &'st str,
+}
+
+impl<'st> StringReference<'st> {
+    pub fn new(index: i32, string: &'st str) -> Self {
+        Self {
+            index: StringIndex(index),
+            string,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct StringTable(Vec<Option<String>>);
 
 impl StringTable {
-    pub fn try_new<T: Read>(stream: &mut ByteStream<T>) -> Result<StringTable> {
+    pub fn try_new<T: Read>(stream: &mut ByteStream<T>) -> Result<Self> {
         let string_count = stream.read_i32()?;
         let mut strings = Vec::with_capacity(string_count as usize);
 
@@ -24,7 +43,7 @@ impl StringTable {
             }
         }
 
-        Ok(StringTable(strings))
+        Ok(Self(strings))
     }
 
     pub fn get(&self, idx: i32) -> Result<&str> {
@@ -37,41 +56,41 @@ impl StringTable {
 }
 
 #[derive(Debug, Default)]
-pub struct TypePool<'st> {
-    inner: HashMap<i64, TypeDescriptor<'st>>,
+pub struct TypePool {
+    inner: HashMap<i64, TypeDescriptor>,
 }
 
-impl<'st> TypePool<'st> {
-    pub fn register(&mut self, class_id: i64, desc: TypeDescriptor<'st>) {
+impl TypePool {
+    pub fn register(&mut self, class_id: i64, desc: TypeDescriptor) {
         self.inner.insert(class_id, desc);
     }
 
-    pub fn get(&self, class_id: i64) -> Option<&TypeDescriptor<'st>> {
+    pub fn get(&self, class_id: i64) -> Option<&TypeDescriptor> {
         self.inner.get(&class_id)
     }
 }
 
 #[derive(Debug)]
-pub struct TypeDescriptor<'st> {
+pub struct TypeDescriptor {
     pub class_id: i64,
-    pub name: &'st str,
-    pub super_type: Option<&'st str>,
+    pub name: StringIndex,
+    pub super_type: Option<StringIndex>,
     pub simple_type: bool,
-    pub fields: Vec<FieldDescriptor<'st>>,
+    pub fields: Vec<FieldDescriptor>,
 
     // these fields are filled by annotations
-    pub label: Option<&'st str>,
-    pub description: Option<&'st str>,
+    pub label: Option<StringIndex>,
+    pub description: Option<StringIndex>,
     pub experimental: bool,
-    pub category: Vec<&'st str>,
+    pub category: Vec<StringIndex>,
 }
 
 #[derive(Debug)]
-pub struct FieldDescriptor<'st> {
+pub struct FieldDescriptor {
     pub class_id: i64,
-    pub name: &'st str,
-    pub label: Option<&'st str>,
-    pub description: Option<&'st str>,
+    pub name: StringIndex,
+    pub label: Option<StringIndex>,
+    pub description: Option<StringIndex>,
     pub experimental: bool,
     pub constant_pool: bool,
     pub array_type: bool,

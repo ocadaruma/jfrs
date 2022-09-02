@@ -1,23 +1,32 @@
 //! Low-level representation of the decoded JFR values.
 
-use crate::reader::type_descriptor::TypePool;
+use crate::reader::byte_stream::{ByteStream, StringType};
+use crate::reader::metadata::Metadata;
+use crate::reader::type_descriptor::{StringTable, TypePool};
 use crate::reader::{Error, Result};
 use std::io::{Read, Seek};
-use crate::reader::byte_stream::{ByteStream, StringType};
 
 #[derive(Debug)]
 pub enum ValueDescriptor {
     Primitive(Primitive),
     Object(Object),
     Array(Vec<ValueDescriptor>),
-    ConstantPool(i64, i64),
+    ConstantPool { class_id: i64, constant_index: i64 },
 }
 
 impl ValueDescriptor {
-    pub fn try_new<T: Read + Seek>(stream: &mut ByteStream<T>, class_id: i64, type_pool: &TypePool<'_>) -> Result<ValueDescriptor> {
-        let type_desc = type_pool.get(class_id).ok_or(Error::InvalidFormat)?;
+    pub fn try_new<T: Read + Seek>(
+        stream: &mut ByteStream<T>,
+        class_id: i64,
+        metadata: &Metadata,
+    ) -> Result<ValueDescriptor> {
+        let type_desc = metadata
+            .type_pool
+            .get(class_id)
+            .ok_or(Error::InvalidFormat)?;
+        let type_name = metadata.lookup_string(type_desc.name)?;
 
-        match type_desc.name {
+        match type_name {
             "int" => {
                 return Ok(ValueDescriptor::Primitive(Primitive::Integer(
                     stream.read_i32()?,
@@ -65,9 +74,10 @@ impl ValueDescriptor {
                         "".to_string(),
                     ))),
                     StringType::Raw(s) => Ok(ValueDescriptor::Primitive(Primitive::String(s))),
-                    StringType::ConstantPool(idx) => {
-                        Ok(ValueDescriptor::ConstantPool(type_desc.class_id, idx))
-                    }
+                    StringType::ConstantPool(idx) => Ok(ValueDescriptor::ConstantPool {
+                        class_id: type_desc.class_id,
+                        constant_index: idx,
+                    }),
                 };
             }
             _ => {}
@@ -77,30 +87,31 @@ impl ValueDescriptor {
             class_id: type_desc.class_id,
             fields: vec![],
         };
+        // TODO: refactor duplicated codes
         for field_desc in type_desc.fields.iter() {
             if field_desc.array_type {
                 let mut elems = vec![];
                 let count = stream.read_i32()?;
                 for _ in 0..count {
                     if field_desc.constant_pool {
-                        elems.push(ValueDescriptor::ConstantPool(
-                            field_desc.class_id,
-                            stream.read_i64()?,
-                        ));
+                        elems.push(ValueDescriptor::ConstantPool {
+                            class_id: field_desc.class_id,
+                            constant_index: stream.read_i64()?,
+                        });
                     } else {
-                        elems.push(Self::try_new(stream, field_desc.class_id, type_pool)?);
+                        elems.push(Self::try_new(stream, field_desc.class_id, metadata)?);
                     }
                 }
                 obj.fields.push(ValueDescriptor::Array(elems));
             } else {
                 if field_desc.constant_pool {
-                    obj.fields.push(ValueDescriptor::ConstantPool(
-                        field_desc.class_id,
-                        stream.read_i64()?,
-                    ));
+                    obj.fields.push(ValueDescriptor::ConstantPool {
+                        class_id: field_desc.class_id,
+                        constant_index: stream.read_i64()?,
+                    });
                 } else {
                     obj.fields
-                        .push(Self::try_new(stream, field_desc.class_id, type_pool)?);
+                        .push(Self::try_new(stream, field_desc.class_id, metadata)?);
                 }
             }
         }

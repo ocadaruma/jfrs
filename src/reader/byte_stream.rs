@@ -2,8 +2,8 @@
 //!
 //! Related JMC code: [SeekableInputStream.java](https://github.com/openjdk/jmc/blob/8.2.0-ga/core/org.openjdk.jmc.flightrecorder/src/main/java/org/openjdk/jmc/flightrecorder/internal/parser/v1/SeekableInputStream.java)
 
-use crate::reader::Result;
 use crate::reader::Error;
+use crate::reader::Result;
 use std::io::{Read, Seek, SeekFrom};
 
 const STRING_ENCODING_NULL: i8 = 0;

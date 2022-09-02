@@ -3,11 +3,14 @@
 //!
 //! Related JMC code: [ChunkMetadata.java](https://github.com/openjdk/jmc/blob/8.2.0-ga/core/org.openjdk.jmc.flightrecorder/src/main/java/org/openjdk/jmc/flightrecorder/internal/parser/v1/ChunkMetadata.java)
 
-use crate::reader::type_descriptor::{FieldDescriptor, StringTable, TickUnit, TypeDescriptor, TypePool, Unit};
-use crate::reader::{Error, Result};
+use crate::reader::byte_stream::{ByteStream, StringType};
+use crate::reader::type_descriptor::{
+    FieldDescriptor, StringIndex, StringReference, StringTable, TickUnit, TypeDescriptor, TypePool,
+    Unit,
+};
+use crate::reader::{ChunkHeader, Error, Result};
 use std::collections::HashMap;
 use std::io::{Read, Seek};
-use crate::reader::byte_stream::{ByteStream, StringType};
 
 const EVENT_TYPE_METADATA: i64 = 0;
 
@@ -35,7 +38,7 @@ impl<'st> ElementType<'st> {
         }
     }
 
-    fn append_child(&mut self, child: ElementType<'st>) {
+    fn append_child(&mut self, child: Self) {
         match self {
             ElementType::Root(e) => match child {
                 ElementType::Metadata(m) => e.metadata = Some(m),
@@ -64,30 +67,36 @@ impl<'st> ElementType<'st> {
         }
     }
 
-    fn set_attribute(&mut self, key: &'st str, value: &'st str) -> Result<()> {
+    fn set_attribute(
+        &mut self,
+        key: StringReference<'st>,
+        value: StringReference<'st>,
+    ) -> Result<()> {
         match self {
-            ElementType::Class(c) => match key {
-                "id" => c.class_id = value.parse().map_err(|_| Error::InvalidFormat)?,
-                "name" => c.type_identifier = Some(value),
-                "superType" => c.super_type = Some(value),
+            ElementType::Class(c) => match key.string {
+                "id" => c.class_id = value.string.parse().map_err(|_| Error::InvalidFormat)?,
+                "name" => c.type_identifier = Some(value.index),
+                "superType" => c.super_type = Some(value.index),
                 "simpleType" => {
-                    c.simple_type = Some(value.parse().map_err(|_| Error::InvalidFormat)?)
+                    c.simple_type = Some(value.string.parse().map_err(|_| Error::InvalidFormat)?)
                 }
                 _ => {}
             },
-            ElementType::Field(f) => match key {
-                "name" => f.field_identifier = Some(value),
-                "class" => f.class_id = value.parse().map_err(|_| Error::InvalidFormat)?,
+            ElementType::Field(f) => match key.string {
+                "name" => f.field_identifier = Some(value.index),
+                "class" => f.class_id = value.string.parse().map_err(|_| Error::InvalidFormat)?,
                 "constantPool" => {
-                    f.constant_pool = Some(value.parse().map_err(|_| Error::InvalidFormat)?)
+                    f.constant_pool = Some(value.string.parse().map_err(|_| Error::InvalidFormat)?)
                 }
-                "dimension" => f.dimension = Some(value.parse().map_err(|_| Error::InvalidFormat)?),
+                "dimension" => {
+                    f.dimension = Some(value.string.parse().map_err(|_| Error::InvalidFormat)?)
+                }
                 _ => {}
             },
-            ElementType::Annotation(a) => match key {
-                "class" => a.class_id = value.parse().map_err(|_| Error::InvalidFormat)?,
+            ElementType::Annotation(a) => match key.string {
+                "class" => a.class_id = value.string.parse().map_err(|_| Error::InvalidFormat)?,
                 _ => {
-                    a.attributes.insert(key, value);
+                    a.attributes.insert(key.string, value);
                 }
             },
             _ => {}
@@ -116,15 +125,15 @@ struct ClassElement<'st> {
     fields: Vec<FieldElement<'st>>,
     setting: Option<SettingElement<'st>>,
     class_id: i64,
-    type_identifier: Option<&'st str>,
-    super_type: Option<&'st str>,
+    type_identifier: Option<StringIndex>,
+    super_type: Option<StringIndex>,
     simple_type: Option<bool>,
 }
 
 #[derive(Debug, Default)]
 struct FieldElement<'st> {
     annotations: Vec<AnnotationElement<'st>>,
-    field_identifier: Option<&'st str>,
+    field_identifier: Option<StringIndex>,
     class_id: i64,
     constant_pool: Option<bool>,
     dimension: Option<i32>,
@@ -133,7 +142,7 @@ struct FieldElement<'st> {
 #[derive(Debug, Default)]
 struct AnnotationElement<'st> {
     class_id: i64,
-    attributes: HashMap<&'st str, &'st str>,
+    attributes: HashMap<&'st str, StringReference<'st>>,
 }
 
 #[derive(Debug, Default)]
@@ -142,13 +151,18 @@ struct SettingElement<'st> {
 }
 
 #[derive(Debug)]
-pub struct Metadata<'st> {
+pub struct Metadata {
     string_table: StringTable,
-    type_pool: TypePool<'st>,
+    pub type_pool: TypePool,
 }
 
-impl<'st> Metadata<'st> {
-    pub fn try_new<T: Read>(stream: &mut ByteStream<T>, string_table: &'st StringTable) -> Result<Metadata<'st>> {
+impl Metadata {
+    pub fn try_new<T: Read + Seek>(
+        stream: &mut ByteStream<T>,
+        header: &ChunkHeader,
+    ) -> Result<Self> {
+        stream.seek(header.absolute_metadata_start_position())?;
+
         // size
         stream.read_i32()?;
         if stream.read_i64()? != EVENT_TYPE_METADATA {
@@ -161,21 +175,34 @@ impl<'st> Metadata<'st> {
         // metadata id
         stream.read_i64()?;
 
-        let type_pool = Self::read_types(stream, string_table)?;
+        let string_table = StringTable::try_new(stream)?;
+        let type_pool = Self::read_types(stream, &string_table)?;
 
-        // Ok(Metadata { string_table, type_pool })
-        Err(Error::InvalidFormat)
+        Ok(Self {
+            string_table,
+            type_pool,
+        })
+    }
+
+    pub fn lookup_string(&self, index: StringIndex) -> Result<&str> {
+        self.string_table.get(index.0)
     }
 
     fn read_types<T: Read>(
         stream: &mut ByteStream<T>,
-        string_table: &'st StringTable) -> Result<TypePool<'st>> {
+        string_table: &StringTable,
+    ) -> Result<TypePool> {
         let mut class_name_map = HashMap::new();
 
         // we don't care root element name. just consume
         stream.read_i32()?;
 
-        let root_element = Self::read_element(stream, string_table, &mut class_name_map, ElementType::Root(RootElement::default()))?;
+        let root_element = Self::read_element(
+            stream,
+            string_table,
+            &mut class_name_map,
+            ElementType::Root(RootElement::default()),
+        )?;
 
         let type_pool = if let ElementType::Root(root) = root_element {
             Self::declare_types(root, class_name_map)?
@@ -186,7 +213,7 @@ impl<'st> Metadata<'st> {
         Ok(type_pool)
     }
 
-    fn read_element<T: Read>(
+    fn read_element<'st, T: Read>(
         stream: &mut ByteStream<T>,
         string_table: &'st StringTable,
         class_name_map: &mut HashMap<i64, &'st str>,
@@ -194,15 +221,19 @@ impl<'st> Metadata<'st> {
     ) -> Result<ElementType<'st>> {
         let attribute_count = stream.read_i32()?;
         for _ in 0..attribute_count {
-            let key = string_table.get(stream.read_i32()?)?;
-            let value = string_table.get(stream.read_i32()?)?;
-            current_element.set_attribute(key, value)?;
+            let (key_idx, value_idx) = (stream.read_i32()?, stream.read_i32()?);
+            let key = string_table.get(key_idx)?;
+            let value = string_table.get(value_idx)?;
+            current_element.set_attribute(
+                StringReference::new(key_idx, key),
+                StringReference::new(value_idx, value),
+            )?;
         }
 
         // at this point, class name is already resolved from attributes
         if let ElementType::Class(ref c) = current_element {
-            if let Some(name) = c.type_identifier {
-                class_name_map.insert(c.class_id, name);
+            if let Some(name_idx) = c.type_identifier {
+                class_name_map.insert(c.class_id, string_table.get(name_idx.0)?);
             }
         }
 
@@ -222,9 +253,9 @@ impl<'st> Metadata<'st> {
     }
 
     fn declare_types(
-        root_element: RootElement<'st>,
-        class_name_map: HashMap<i64, &'st str>,
-    ) -> Result<TypePool<'st>> {
+        root_element: RootElement,
+        class_name_map: HashMap<i64, &str>,
+    ) -> Result<TypePool> {
         let mut pool = TypePool::default();
         if let Some(classes) = root_element.metadata.map(|m| m.classes) {
             for class_element in classes {
@@ -243,18 +274,21 @@ impl<'st> Metadata<'st> {
                 for annot in class_element.annotations {
                     if let Some(&name) = class_name_map.get(&annot.class_id) {
                         match name {
-                            "jdk.jfr.Label" => desc.label = annot.attributes.get("value").copied(),
+                            "jdk.jfr.Label" => {
+                                desc.label = annot.attributes.get("value").copied().map(|s| s.index)
+                            }
                             "jdk.jfr.Description" => {
-                                desc.description = annot.attributes.get("value").copied()
+                                desc.description =
+                                    annot.attributes.get("value").copied().map(|s| s.index)
                             }
                             "jdk.jfr.Experimental" => desc.experimental = true,
                             "jdk.jfr.Category" => {
                                 let mut idx = 0;
                                 loop {
                                     if let Some(&v) =
-                                    annot.attributes.get(format!("value-{}", idx).as_str())
+                                        annot.attributes.get(format!("value-{}", idx).as_str())
                                     {
-                                        desc.category.push(v);
+                                        desc.category.push(v.index);
                                     } else {
                                         break;
                                     }
@@ -284,10 +318,12 @@ impl<'st> Metadata<'st> {
                         if let Some(&name) = class_name_map.get(&annot.class_id) {
                             match name {
                                 "jdk.jfr.Label" => {
-                                    field_desc.label = annot.attributes.get("value").copied()
+                                    field_desc.label =
+                                        annot.attributes.get("value").copied().map(|s| s.index)
                                 }
                                 "jdk.jfr.Description" => {
-                                    field_desc.description = annot.attributes.get("value").copied()
+                                    field_desc.description =
+                                        annot.attributes.get("value").copied().map(|s| s.index)
                                 }
                                 "jdk.jfr.Experimental" => field_desc.experimental = true,
                                 "jdk.jfr.Unsigned" => field_desc.unsigned = true,
@@ -300,7 +336,7 @@ impl<'st> Metadata<'st> {
                                 }
                                 "jdk.jfr.Timespan" => {
                                     if let Some(&v) = annot.attributes.get("value") {
-                                        match v {
+                                        match v.string {
                                             "TICKS" => {
                                                 field_desc.tick_unit = Some(TickUnit::Timespan)
                                             }
@@ -318,7 +354,7 @@ impl<'st> Metadata<'st> {
                                 "jdk.jfr.Frequency" => field_desc.unit = Some(Unit::Hz),
                                 "jdk.jfr.Timestamp" => {
                                     if let Some(&v) = annot.attributes.get("value") {
-                                        match v {
+                                        match v.string {
                                             "TICKS" => {
                                                 field_desc.tick_unit = Some(TickUnit::Timestamp)
                                             }
