@@ -5,7 +5,7 @@ use crate::reader::metadata::Metadata;
 
 use crate::reader::type_descriptor::{FieldDescriptor, TypeDescriptor};
 use crate::reader::{Error, Result};
-use std::io::{Read, Seek};
+use std::io::{Read};
 
 #[derive(Debug)]
 pub enum ValueDescriptor {

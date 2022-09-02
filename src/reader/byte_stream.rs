@@ -5,7 +5,7 @@
 use crate::reader::Error;
 use crate::reader::Result;
 use std::io::{Read, Seek, SeekFrom};
-use std::sync::mpsc::channel;
+
 
 const STRING_ENCODING_NULL: i8 = 0;
 const STRING_ENCODING_EMPTY_STRING: i8 = 1;
