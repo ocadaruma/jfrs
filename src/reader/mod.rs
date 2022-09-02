@@ -7,7 +7,6 @@ use crate::{Version, MAGIC, VERSION_1, VERSION_2};
 use std::io;
 use std::io::{Read, Seek};
 
-
 mod byte_stream;
 mod constant_pool;
 mod metadata;
@@ -188,7 +187,7 @@ where
 mod tests {
     use super::*;
     use std::fs::File;
-    
+
     use std::path::PathBuf;
 
     #[test]
