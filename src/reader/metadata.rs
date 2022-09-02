@@ -3,7 +3,7 @@
 //!
 //! Related JMC code: [ChunkMetadata.java](https://github.com/openjdk/jmc/blob/8.2.0-ga/core/org.openjdk.jmc.flightrecorder/src/main/java/org/openjdk/jmc/flightrecorder/internal/parser/v1/ChunkMetadata.java)
 
-use crate::reader::byte_stream::{ByteStream, StringType};
+use crate::reader::byte_stream::{ByteStream};
 use crate::reader::type_descriptor::{
     FieldDescriptor, StringIndex, StringReference, StringTable, TickUnit, TypeDescriptor, TypePool,
     Unit,

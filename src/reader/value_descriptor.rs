@@ -2,7 +2,7 @@
 
 use crate::reader::byte_stream::{ByteStream, StringType};
 use crate::reader::metadata::Metadata;
-use crate::reader::type_descriptor::{StringTable, TypePool};
+
 use crate::reader::{Error, Result};
 use std::io::{Read, Seek};
 

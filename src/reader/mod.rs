@@ -4,10 +4,9 @@ use crate::reader::byte_stream::{ByteStream, IntEncoding};
 use crate::reader::constant_pool::ConstantPool;
 use crate::reader::metadata::Metadata;
 use crate::{Version, MAGIC, VERSION_1, VERSION_2};
-use byteorder::{ReadBytesExt, BE};
 use std::io;
-use std::io::{BufReader, Read, Seek};
-use std::marker::PhantomData;
+use std::io::{Read, Seek};
+
 
 mod byte_stream;
 mod constant_pool;
@@ -105,7 +104,7 @@ where
         match self.stream.read_u8() {
             Ok(magic_head) => {
                 let mut magic = [magic_head, 0, 0, 0];
-                let mut magic_tail: [u8; 3] = self.stream.read_exact()?;
+                let magic_tail: [u8; 3] = self.stream.read_exact()?;
                 magic[1..].clone_from_slice(&magic_tail);
 
                 if magic != MAGIC {
@@ -189,7 +188,7 @@ where
 mod tests {
     use super::*;
     use std::fs::File;
-    use std::io::Cursor;
+    
     use std::path::PathBuf;
 
     #[test]
@@ -198,7 +197,7 @@ mod tests {
         let mut reader = JfrReader::new(File::open(path).unwrap());
 
         while let Some(chunk) = reader.next() {
-            let chunk = chunk.unwrap();
+            let _chunk = chunk.unwrap();
             // println!("header: {:#?}", chunk.header);
             // println!("metadata: {:#?}", chunk.metadata);
             // println!("constant pool: {:#?}", chunk.constant_pool);

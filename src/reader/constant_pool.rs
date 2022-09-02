@@ -1,11 +1,11 @@
 use crate::reader::byte_stream::ByteStream;
 use crate::reader::metadata::Metadata;
-use crate::reader::type_descriptor::TypePool;
+
 use crate::reader::value_descriptor::ValueDescriptor;
 use crate::reader::Error;
 use crate::reader::{ChunkHeader, Result};
 use std::collections::HashMap;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, Seek};
 
 const EVENT_TYPE_CONSTANT_POOL: i64 = 1;
 
