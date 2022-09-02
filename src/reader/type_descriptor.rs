@@ -39,7 +39,7 @@ impl StringTable {
 
 #[derive(Debug, Default)]
 pub struct TypePool {
-    inner: HashMap<i64, TypeDescriptor>,
+    pub(crate) inner: HashMap<i64, TypeDescriptor>,
 }
 
 impl TypePool {

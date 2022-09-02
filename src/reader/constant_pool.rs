@@ -10,13 +10,13 @@ use std::io::{Read, Seek};
 const EVENT_TYPE_CONSTANT_POOL: i64 = 1;
 
 #[derive(Debug, Default)]
-struct PerTypePool {
-    inner: HashMap<i64, ValueDescriptor>,
+pub struct PerTypePool {
+    pub(crate) inner: HashMap<i64, ValueDescriptor>,
 }
 
 #[derive(Debug, Default)]
 pub struct ConstantPool {
-    inner: HashMap<i64, PerTypePool>,
+    pub(crate) inner: HashMap<i64, PerTypePool>,
 }
 
 impl ConstantPool {

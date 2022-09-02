@@ -197,12 +197,33 @@ mod tests {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-data/profiler-wall.jfr");
         let mut reader = JfrReader::new(File::open(path).unwrap());
 
+        let mut chunk_count = 0;
         while let Some(chunk) = reader.next() {
             let chunk = chunk.unwrap();
-            println!("header: {:#?}", chunk.header);
-            println!("metadata: {:#?}", chunk.metadata);
-            println!("constant pool: {:#?}", chunk.constant_pool);
-            // for event in reader.events(chunk.unwrap()) {}
+            chunk_count += 1;
+
+            // You can see these values on JMC
+            assert_eq!(chunk.constant_pool.inner.len(), 9);
+
+            // class_id:30 = jdk.types.Symbol
+            assert_eq!(128, chunk.constant_pool.inner.get(&30).unwrap().inner.len());
         }
+
+        assert_eq!(chunk_count, 1);
+    }
+
+    #[test]
+    fn test_read_multiple_chunk() {
+        let path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-data/profiler-multichunk.jfr");
+        let mut reader = JfrReader::new(File::open(path).unwrap());
+
+        let mut chunk_count = 0;
+        while let Some(chunk) = reader.next() {
+            let _chunk = chunk.unwrap();
+            chunk_count += 1;
+        }
+
+        assert_eq!(chunk_count, 3);
     }
 }
