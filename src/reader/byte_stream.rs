@@ -5,6 +5,7 @@
 use crate::reader::Error;
 use crate::reader::Result;
 use std::io::{Read, Seek, SeekFrom};
+use std::sync::mpsc::channel;
 
 const STRING_ENCODING_NULL: i8 = 0;
 const STRING_ENCODING_EMPTY_STRING: i8 = 1;
@@ -88,6 +89,14 @@ impl<T: Read> ByteStream<T> {
         }
     }
 
+    pub fn read_char(&mut self) -> Result<char> {
+        let i = match self.int_encoding {
+            IntEncoding::Raw => self.read_i16()? as u32,
+            IntEncoding::Compressed => self.read_var_i64()? as u32
+        };
+        char::try_from(i).map_err(Error::InvalidChar)
+    }
+
     pub fn read_f32(&mut self) -> Result<f32> {
         self.read_exact().map(f32::from_be_bytes)
     }
@@ -124,8 +133,7 @@ impl<T: Read> ByteStream<T> {
         if encoding == STRING_ENCODING_CHAR_ARRAY {
             let mut buf = Vec::with_capacity(size);
             for _ in 0..size {
-                let c = self.read_i16()? as u32;
-                buf.push(char::try_from(c).map_err(|_| Error::InvalidString)?);
+                buf.push(self.read_char()?);
             }
             return Ok(StringType::Raw(buf.iter().collect()));
         }

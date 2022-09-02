@@ -6,26 +6,9 @@ use crate::reader::byte_stream::{ByteStream, StringType};
 use crate::reader::{Error, Result};
 use std::collections::HashMap;
 use std::io::Read;
+use std::rc::Rc;
 
-/// Index to the string inside string table
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct StringIndex(pub i32);
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct StringReference<'st> {
-    pub index: StringIndex,
-    pub string: &'st str,
-}
-
-impl<'st> StringReference<'st> {
-    pub fn new(index: i32, string: &'st str) -> Self {
-        Self {
-            index: StringIndex(index),
-            string,
-        }
-    }
-}
-
+/// String intern pool
 #[derive(Debug)]
 pub struct StringTable(Vec<Option<String>>);
 
@@ -73,24 +56,24 @@ impl TypePool {
 #[derive(Debug)]
 pub struct TypeDescriptor {
     pub class_id: i64,
-    pub name: StringIndex,
-    pub super_type: Option<StringIndex>,
+    pub name: Rc<str>,
+    pub super_type: Option<Rc<str>>,
     pub simple_type: bool,
     pub fields: Vec<FieldDescriptor>,
 
     // these fields are filled by annotations
-    pub label: Option<StringIndex>,
-    pub description: Option<StringIndex>,
+    pub label: Option<Rc<str>>,
+    pub description: Option<Rc<str>>,
     pub experimental: bool,
-    pub category: Vec<StringIndex>,
+    pub category: Vec<Rc<str>>,
 }
 
 #[derive(Debug)]
 pub struct FieldDescriptor {
     pub class_id: i64,
-    pub name: StringIndex,
-    pub label: Option<StringIndex>,
-    pub description: Option<StringIndex>,
+    pub name: Rc<str>,
+    pub label: Option<Rc<str>>,
+    pub description: Option<Rc<str>>,
     pub experimental: bool,
     pub constant_pool: bool,
     pub array_type: bool,

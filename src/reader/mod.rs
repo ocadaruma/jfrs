@@ -18,7 +18,9 @@ pub enum Error {
     InvalidFormat,
     InvalidStringIndex(i32),
     InvalidString,
+    InvalidChar(std::char::CharTryFromError),
     UnsupportedVersion(Version),
+    ClassNotFound(i64),
     IoError(io::Error),
 }
 
@@ -196,10 +198,10 @@ mod tests {
         let mut reader = JfrReader::new(File::open(path).unwrap());
 
         while let Some(chunk) = reader.next() {
-            let _chunk = chunk.unwrap();
-            // println!("header: {:#?}", chunk.header);
-            // println!("metadata: {:#?}", chunk.metadata);
-            // println!("constant pool: {:#?}", chunk.constant_pool);
+            let chunk = chunk.unwrap();
+            println!("header: {:#?}", chunk.header);
+            println!("metadata: {:#?}", chunk.metadata);
+            println!("constant pool: {:#?}", chunk.constant_pool);
             // for event in reader.events(chunk.unwrap()) {}
         }
     }
