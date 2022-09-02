@@ -10,7 +10,7 @@ use std::rc::Rc;
 
 /// String intern pool
 #[derive(Debug)]
-pub struct StringTable(Vec<Option<String>>);
+pub struct StringTable(Vec<Option<Rc<str>>>);
 
 impl StringTable {
     pub fn try_new<T: Read>(stream: &mut ByteStream<T>) -> Result<Self> {
@@ -20,8 +20,8 @@ impl StringTable {
         for _ in 0..string_count {
             match stream.read_string()? {
                 StringType::Null => strings.push(None),
-                StringType::Empty => strings.push(Some("".to_string())),
-                StringType::Raw(s) => strings.push(Some(s)),
+                StringType::Empty => strings.push(Some(Rc::from(""))),
+                StringType::Raw(s) => strings.push(Some(Rc::from(s))),
                 _ => return Err(Error::InvalidString),
             }
         }
@@ -29,12 +29,11 @@ impl StringTable {
         Ok(Self(strings))
     }
 
-    pub fn get(&self, idx: i32) -> Result<&str> {
+    pub fn get(&self, idx: i32) -> Result<&Rc<str>> {
         self.0
             .get(idx as usize)
             .and_then(|s| s.as_ref())
             .ok_or(Error::InvalidStringIndex(idx))
-            .map(|s| s.as_str())
     }
 }
 

@@ -67,7 +67,7 @@ impl<'st> ElementType<'st> {
         }
     }
 
-    fn set_attribute(&mut self, key: &'st str, value: &'st str) -> Result<()> {
+    fn set_attribute(&mut self, key: &'st str, value: &'st Rc<str>) -> Result<()> {
         match self {
             ElementType::Class(c) => match key {
                 "id" => c.class_id = value.parse().map_err(|_| Error::InvalidFormat)?,
@@ -90,7 +90,7 @@ impl<'st> ElementType<'st> {
             ElementType::Annotation(a) => match key {
                 "class" => a.class_id = value.parse().map_err(|_| Error::InvalidFormat)?,
                 _ => {
-                    a.attributes.insert(key, value);
+                    a.attributes.insert(key, value.clone());
                 }
             },
             _ => {}
@@ -119,15 +119,15 @@ struct ClassElement<'st> {
     fields: Vec<FieldElement<'st>>,
     setting: Option<SettingElement<'st>>,
     class_id: i64,
-    type_identifier: Option<&'st str>,
-    super_type: Option<&'st str>,
+    type_identifier: Option<&'st Rc<str>>,
+    super_type: Option<&'st Rc<str>>,
     simple_type: Option<bool>,
 }
 
 #[derive(Debug, Default)]
 struct FieldElement<'st> {
     annotations: Vec<AnnotationElement<'st>>,
-    field_identifier: Option<&'st str>,
+    field_identifier: Option<&'st Rc<str>>,
     class_id: i64,
     constant_pool: Option<bool>,
     dimension: Option<i32>,
@@ -136,7 +136,7 @@ struct FieldElement<'st> {
 #[derive(Debug, Default)]
 struct AnnotationElement<'st> {
     class_id: i64,
-    attributes: HashMap<&'st str, &'st str>,
+    attributes: HashMap<&'st str, Rc<str>>,
 }
 
 #[derive(Debug, Default)]
@@ -217,16 +217,16 @@ impl Metadata {
         }
 
         // at this point, class name is already resolved from attributes
-        if let ElementType::Class(ref c) = current_element {
+        if let ElementType::Class(c) = &current_element {
             if let Some(name) = c.type_identifier {
-                class_name_map.insert(c.class_id, name);
+                class_name_map.insert(c.class_id, name.as_ref());
             }
         }
 
         let children_count = stream.read_i32()?;
         for _ in 0..children_count {
             let name = string_table.get(stream.read_i32()?)?;
-            let element = ElementType::try_new(name)?;
+            let element = ElementType::try_new(name.as_ref())?;
             current_element.append_child(Self::read_element(
                 stream,
                 string_table,
@@ -251,8 +251,11 @@ impl Metadata {
         for class_element in classes {
             let mut desc = TypeDescriptor {
                 class_id: class_element.class_id,
-                name: Rc::from(class_element.type_identifier.ok_or(Error::InvalidFormat)?),
-                super_type: class_element.super_type.map(Rc::from),
+                name: class_element
+                    .type_identifier
+                    .cloned()
+                    .ok_or(Error::InvalidFormat)?,
+                super_type: class_element.super_type.cloned(),
                 simple_type: class_element.simple_type.unwrap_or(false),
                 fields: vec![],
                 label: None,
@@ -268,7 +271,10 @@ impl Metadata {
             for field in class_element.fields {
                 let mut field_desc = FieldDescriptor {
                     class_id: field.class_id,
-                    name: Rc::from(field.field_identifier.ok_or(Error::InvalidFormat)?),
+                    name: field
+                        .field_identifier
+                        .cloned()
+                        .ok_or(Error::InvalidFormat)?,
                     label: None,
                     description: None,
                     experimental: false,
@@ -293,23 +299,23 @@ impl Metadata {
 
     fn resolve_class_annotation(
         desc: &mut TypeDescriptor,
-        annot: &AnnotationElement<'_>,
+        annot: &AnnotationElement,
         class_name_map: &HashMap<i64, &str>,
     ) -> Result<()> {
         if let Some(&name) = class_name_map.get(&annot.class_id) {
             match name {
-                "jdk.jfr.Label" => {
-                    desc.label = annot.attributes.get("value").copied().map(Rc::from)
-                }
-                "jdk.jfr.Description" => {
-                    desc.description = annot.attributes.get("value").copied().map(Rc::from)
-                }
+                "jdk.jfr.Label" => desc.label = annot.attributes.get("value").cloned(),
+                "jdk.jfr.Description" => desc.description = annot.attributes.get("value").cloned(),
                 "jdk.jfr.Experimental" => desc.experimental = true,
                 "jdk.jfr.Category" => {
                     let mut idx = 0;
                     loop {
-                        if let Some(&v) = annot.attributes.get(format!("value-{}", idx).as_str()) {
-                            desc.category.push(Rc::from(v));
+                        if let Some(v) = annot
+                            .attributes
+                            .get(format!("value-{}", idx).as_str())
+                            .cloned()
+                        {
+                            desc.category.push(v);
                         } else {
                             break;
                         }
@@ -324,25 +330,21 @@ impl Metadata {
 
     fn resolve_field_annotation(
         desc: &mut FieldDescriptor,
-        annot: &AnnotationElement<'_>,
+        annot: &AnnotationElement,
         class_name_map: &HashMap<i64, &str>,
     ) -> Result<()> {
         if let Some(&name) = class_name_map.get(&annot.class_id) {
             match name {
-                "jdk.jfr.Label" => {
-                    desc.label = annot.attributes.get("value").copied().map(Rc::from)
-                }
-                "jdk.jfr.Description" => {
-                    desc.description = annot.attributes.get("value").copied().map(Rc::from)
-                }
+                "jdk.jfr.Label" => desc.label = annot.attributes.get("value").cloned(),
+                "jdk.jfr.Description" => desc.description = annot.attributes.get("value").cloned(),
                 "jdk.jfr.Experimental" => desc.experimental = true,
                 "jdk.jfr.Unsigned" => desc.unsigned = true,
                 "jdk.jfr.MemoryAmount" | "jdk.jfr.DataAmount" => desc.unit = Some(Unit::Byte),
                 "jdk.jfr.Percentage" => desc.unit = Some(Unit::PercentUnity),
                 "jdk.jfr.MemoryAddress" => desc.unit = Some(Unit::AddressUnity),
                 "jdk.jfr.Timespan" => {
-                    if let Some(&v) = annot.attributes.get("value") {
-                        match v {
+                    if let Some(v) = annot.attributes.get("value") {
+                        match v.as_ref() {
                             "TICKS" => desc.tick_unit = Some(TickUnit::Timespan),
                             "NANOSECONDS" => desc.unit = Some(Unit::Nanosecond),
                             "MILLISECONDS" => desc.unit = Some(Unit::Millisecond),
@@ -353,8 +355,8 @@ impl Metadata {
                 }
                 "jdk.jfr.Frequency" => desc.unit = Some(Unit::Hz),
                 "jdk.jfr.Timestamp" => {
-                    if let Some(&v) = annot.attributes.get("value") {
-                        match v {
+                    if let Some(v) = annot.attributes.get("value") {
+                        match v.as_ref() {
                             "TICKS" => desc.tick_unit = Some(TickUnit::Timestamp),
                             "NANOSECONDS_SINCE_EPOCH" => desc.unit = Some(Unit::EpochNano),
                             "MILLISECONDS_SINCE_EPOCH" => desc.unit = Some(Unit::EpochMilli),
@@ -367,5 +369,60 @@ impl Metadata {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_string_intern() {
+        let class1_name = Rc::from("Class1");
+        let class2_name = Rc::from("Class2");
+        let class3_name = Rc::from("Class3");
+        let field_name = Rc::from("fieldWithTypeOfClass1");
+
+        let class1 = class(1, &class1_name, vec![]);
+        let class2 = class(2, &class2_name, vec![field(1, &field_name)]);
+        let class3 = class(3, &class3_name, vec![field(1, &field_name)]);
+
+        let mut meta = MetadataElement::default();
+        meta.classes = vec![class1, class2, class3];
+
+        let mut root = RootElement::default();
+        root.metadata = Some(meta);
+
+        let class_name_map = HashMap::from([
+            (1i64, class1_name.as_ref()),
+            (2, class2_name.as_ref()),
+            (3, class3_name.as_ref()),
+        ]);
+
+        let type_pool = Metadata::declare_types(root, class_name_map).unwrap();
+
+        let desc2 = type_pool.get(2).unwrap();
+        let desc3 = type_pool.get(3).unwrap();
+
+        assert!(Rc::ptr_eq(&desc2.fields[0].name, &desc3.fields[0].name));
+    }
+
+    fn class<'a>(
+        class_id: i64,
+        name: &'a Rc<str>,
+        fields: Vec<FieldElement<'a>>,
+    ) -> ClassElement<'a> {
+        let mut element = ClassElement::default();
+        element.class_id = class_id;
+        element.type_identifier = Some(name);
+        element.fields = fields;
+        element
+    }
+
+    fn field(class_id: i64, name: &Rc<str>) -> FieldElement {
+        let mut element = FieldElement::default();
+        element.class_id = class_id;
+        element.field_identifier = Some(name);
+        element
     }
 }
