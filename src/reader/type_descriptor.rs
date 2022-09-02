@@ -2,7 +2,39 @@
 //! TypeDescriptor defines the "schema" of types.
 //! Event and ConstantPool values are parsed based on declared TypeDescriptor.
 
+use crate::reader::{Error, Result};
 use std::collections::HashMap;
+use std::io::Read;
+use crate::reader::byte_stream::{ByteStream, StringType};
+
+#[derive(Debug)]
+pub struct StringTable(Vec<Option<String>>);
+
+impl StringTable {
+    pub fn try_new<T: Read>(stream: &mut ByteStream<T>) -> Result<StringTable> {
+        let string_count = stream.read_i32()?;
+        let mut strings = Vec::with_capacity(string_count as usize);
+
+        for _ in 0..string_count {
+            match stream.read_string()? {
+                StringType::Null => strings.push(None),
+                StringType::Empty => strings.push(Some("".to_string())),
+                StringType::Raw(s) => strings.push(Some(s)),
+                _ => return Err(Error::InvalidString),
+            }
+        }
+
+        Ok(StringTable(strings))
+    }
+
+    pub fn get(&self, idx: i32) -> Result<&str> {
+        self.0
+            .get(idx as usize)
+            .and_then(|s| s.as_ref())
+            .ok_or(Error::InvalidStringIndex(idx))
+            .map(|s| s.as_str())
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct TypePool<'st> {

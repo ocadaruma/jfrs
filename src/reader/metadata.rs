@@ -1,11 +1,13 @@
-use crate::reader::v1::byte_reader::{ByteReader, StringType};
-use crate::reader::v1::type_descriptor::{
-    FieldDescriptor, TickUnit, TypeDescriptor, TypePool, Unit,
-};
+//! Read JFR Metadata event.
+//! Metadata event contains the type definitions to parse further constant pools and recorded events.
+//!
+//! Related JMC code: [ChunkMetadata.java](https://github.com/openjdk/jmc/blob/8.2.0-ga/core/org.openjdk.jmc.flightrecorder/src/main/java/org/openjdk/jmc/flightrecorder/internal/parser/v1/ChunkMetadata.java)
+
+use crate::reader::type_descriptor::{FieldDescriptor, StringTable, TickUnit, TypeDescriptor, TypePool, Unit};
 use crate::reader::{Error, Result};
 use std::collections::HashMap;
-use std::io::Read;
-use std::process::id;
+use std::io::{Read, Seek};
+use crate::reader::byte_stream::{ByteStream, StringType};
 
 const EVENT_TYPE_METADATA: i64 = 0;
 
@@ -140,81 +142,43 @@ struct SettingElement<'st> {
 }
 
 #[derive(Debug)]
-pub struct Metadata {
+pub struct Metadata<'st> {
     string_table: StringTable,
+    type_pool: TypePool<'st>,
 }
 
-#[derive(Debug)]
-pub struct StringTable(Vec<Option<String>>);
-
-impl StringTable {
-    pub fn get(&self, idx: i32) -> Result<&str> {
-        self.0
-            .get(idx as usize)
-            .and_then(|s| s.as_ref())
-            .ok_or(Error::InvalidFormat)
-            .map(|s| s.as_str())
-    }
-}
-
-pub struct MetadataReader<'a, R>(&'a mut R);
-
-impl<'a, R> MetadataReader<'a, R>
-where
-    R: Read,
-{
-    pub fn wrap(inner: &'a mut R) -> Self {
-        Self(inner)
-    }
-
-    pub fn read_metadata(&mut self, reader: &ByteReader) -> Result<Metadata> {
+impl<'st> Metadata<'st> {
+    pub fn try_new<T: Read>(stream: &mut ByteStream<T>, string_table: &'st StringTable) -> Result<Metadata<'st>> {
         // size
-        reader.read_i32(self.0)?;
-        if reader.read_i64(self.0)? != EVENT_TYPE_METADATA {
+        stream.read_i32()?;
+        if stream.read_i64()? != EVENT_TYPE_METADATA {
             return Err(Error::InvalidFormat);
         }
-
         // start time
-        reader.read_i64(self.0)?;
+        stream.read_i64()?;
         // duration
-        reader.read_i64(self.0)?;
+        stream.read_i64()?;
         // metadata id
-        reader.read_i64(self.0)?;
+        stream.read_i64()?;
 
-        let string_count = reader.read_i32(self.0)?;
-        let mut strings = Vec::with_capacity(string_count as usize);
+        let type_pool = Self::read_types(stream, string_table)?;
 
-        for _ in 0..string_count {
-            match reader.read_string(self.0)? {
-                StringType::Null => strings.push(None),
-                StringType::Empty => strings.push(Some("".to_string())),
-                StringType::Raw(s) => strings.push(Some(s)),
-                _ => return Err(Error::InvalidString),
-            }
-        }
-
-        let string_table = StringTable(strings);
-
-        Ok(Metadata { string_table })
+        // Ok(Metadata { string_table, type_pool })
+        Err(Error::InvalidFormat)
     }
 
-    pub fn read_types<'st>(
-        &mut self,
-        reader: &ByteReader,
-        metadata: &'st Metadata,
-    ) -> Result<TypePool<'st>> {
+    fn read_types<T: Read>(
+        stream: &mut ByteStream<T>,
+        string_table: &'st StringTable) -> Result<TypePool<'st>> {
         let mut class_name_map = HashMap::new();
-        // we don't care root element name
-        reader.read_i32(self.0)?;
-        let root_element = self.read_element(
-            reader,
-            &metadata.string_table,
-            &mut class_name_map,
-            ElementType::Root(RootElement::default()),
-        )?;
+
+        // we don't care root element name. just consume
+        stream.read_i32()?;
+
+        let root_element = Self::read_element(stream, string_table, &mut class_name_map, ElementType::Root(RootElement::default()))?;
 
         let type_pool = if let ElementType::Root(root) = root_element {
-            self.declare_types(root, class_name_map)?
+            Self::declare_types(root, class_name_map)?
         } else {
             return Err(Error::InvalidFormat);
         };
@@ -222,33 +186,32 @@ where
         Ok(type_pool)
     }
 
-    fn read_element<'st>(
-        &mut self,
-        reader: &ByteReader,
+    fn read_element<T: Read>(
+        stream: &mut ByteStream<T>,
         string_table: &'st StringTable,
         class_name_map: &mut HashMap<i64, &'st str>,
         mut current_element: ElementType<'st>,
     ) -> Result<ElementType<'st>> {
-        let attribute_count = reader.read_i32(self.0)?;
+        let attribute_count = stream.read_i32()?;
         for _ in 0..attribute_count {
-            let key = string_table.get(reader.read_i32(self.0)?)?;
-            let value = string_table.get(reader.read_i32(self.0)?)?;
+            let key = string_table.get(stream.read_i32()?)?;
+            let value = string_table.get(stream.read_i32()?)?;
             current_element.set_attribute(key, value)?;
         }
 
-        // at this point, class names should be resolved from attributes
+        // at this point, class name is already resolved from attributes
         if let ElementType::Class(ref c) = current_element {
             if let Some(name) = c.type_identifier {
                 class_name_map.insert(c.class_id, name);
             }
         }
 
-        let children_count = reader.read_i32(self.0)?;
+        let children_count = stream.read_i32()?;
         for _ in 0..children_count {
-            let name = string_table.get(reader.read_i32(self.0)?)?;
+            let name = string_table.get(stream.read_i32()?)?;
             let element = ElementType::try_new(name)?;
-            current_element.append_child(self.read_element(
-                reader,
+            current_element.append_child(Self::read_element(
+                stream,
                 string_table,
                 class_name_map,
                 element,
@@ -258,8 +221,7 @@ where
         Ok(current_element)
     }
 
-    fn declare_types<'st>(
-        &self,
+    fn declare_types(
         root_element: RootElement<'st>,
         class_name_map: HashMap<i64, &'st str>,
     ) -> Result<TypePool<'st>> {
@@ -290,7 +252,7 @@ where
                                 let mut idx = 0;
                                 loop {
                                     if let Some(&v) =
-                                        annot.attributes.get(format!("value-{}", id()).as_str())
+                                    annot.attributes.get(format!("value-{}", idx).as_str())
                                     {
                                         desc.category.push(v);
                                     } else {
