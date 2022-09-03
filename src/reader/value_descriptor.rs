@@ -3,8 +3,8 @@
 use crate::reader::byte_stream::{ByteStream, StringType};
 use crate::reader::metadata::Metadata;
 
-use crate::reader::constant_pool::ConstantPool;
-use crate::reader::type_descriptor::{FieldDescriptor, TypeDescriptor, TypePool};
+
+use crate::reader::type_descriptor::{FieldDescriptor, TypeDescriptor};
 use crate::reader::{Chunk, Error, Result};
 use std::io::Read;
 

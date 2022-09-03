@@ -6,7 +6,7 @@ use crate::reader::byte_stream::{ByteStream, StringType};
 use crate::reader::{Error, Result};
 use std::collections::HashMap;
 use std::io::Read;
-use std::ops::Index;
+
 use std::rc::Rc;
 
 /// String intern pool
