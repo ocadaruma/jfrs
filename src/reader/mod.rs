@@ -2,6 +2,7 @@
 
 use crate::reader::byte_stream::{ByteStream, IntEncoding};
 use crate::reader::constant_pool::ConstantPool;
+use crate::reader::event::EventIterator;
 use crate::reader::metadata::Metadata;
 use crate::{Version, MAGIC, VERSION_1, VERSION_2};
 use std::io;
@@ -9,8 +10,10 @@ use std::io::{Read, Seek};
 
 mod byte_stream;
 mod constant_pool;
+mod event;
 mod metadata;
 mod type_descriptor;
+mod types;
 mod value_descriptor;
 
 #[derive(Debug)]
@@ -59,6 +62,10 @@ impl ChunkHeader {
     fn absolute_body_start_position(&self) -> u64 {
         self.absolute_chunk_start_position + Self::HEADER_SIZE
     }
+
+    fn chunk_body_size(&self) -> u64 {
+        self.chunk_size as u64 - Self::HEADER_SIZE
+    }
 }
 
 #[derive(Debug)]
@@ -85,21 +92,18 @@ where
     }
 
     pub fn next(&mut self) -> Option<Result<Chunk>> {
-        match self.next_chunk() {
+        match self.internal_next() {
             Ok(Some(chunk)) => Some(Ok(chunk)),
             Ok(None) => None,
             Err(e) => Some(Err(e)),
         }
     }
 
-    pub fn events(&mut self, chunk: Chunk) -> EventIterator<T> {
-        EventIterator {
-            chunk,
-            stream: &mut self.stream,
-        }
+    pub fn events<'a>(&'a mut self, chunk: &'a Chunk) -> EventIterator<'a, T> {
+        EventIterator::new(chunk, &mut self.stream)
     }
 
-    fn next_chunk(&mut self) -> Result<Option<Chunk>> {
+    fn internal_next(&mut self) -> Result<Option<Chunk>> {
         self.stream.set_int_encoding(IntEncoding::Raw);
         self.stream.seek(self.chunk_start_position)?;
         match self.stream.read_u8() {
@@ -169,27 +173,12 @@ where
     }
 }
 
-pub struct EventIterator<'a, T> {
-    chunk: Chunk,
-    stream: &'a mut ByteStream<T>,
-}
-
-impl<'a, T> Iterator for EventIterator<'a, T>
-where
-    T: Read + Seek,
-{
-    type Item = ();
-
-    fn next(&mut self) -> Option<Self::Item> {
-        todo!()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs::File;
 
+    use crate::reader::value_descriptor::{Primitive, ValueDescriptor};
     use std::path::PathBuf;
 
     #[test]
@@ -207,6 +196,25 @@ mod tests {
 
             // class_id:30 = jdk.types.Symbol
             assert_eq!(128, chunk.constant_pool.inner.get(&30).unwrap().inner.len());
+
+            // constant_index: 203 for jdk.types.Symbol
+            let field = chunk
+                .constant_pool
+                .get(30, 203)
+                .and_then(|c| c.get_field("string", &chunk))
+                .unwrap();
+            if let ValueDescriptor::Primitive(Primitive::String(s)) = field {
+                assert_eq!(s, "CompileBroker::compiler_thread_loop");
+            } else {
+                panic!("Unexpected value type: {:?}", field);
+            }
+
+            let count = reader
+                .events(&chunk)
+                .flatten()
+                .filter(|e| e.class.name.as_ref() == "jdk.ExecutionSample")
+                .fold(0, |a, _| a + 1);
+            assert_eq!(count, 8836);
         }
 
         assert_eq!(chunk_count, 1);

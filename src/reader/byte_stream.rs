@@ -6,7 +6,6 @@ use crate::reader::Error;
 use crate::reader::Result;
 use std::io::{Read, Seek, SeekFrom};
 
-
 const STRING_ENCODING_NULL: i8 = 0;
 const STRING_ENCODING_EMPTY_STRING: i8 = 1;
 const STRING_ENCODING_CONSTANT_POOL: i8 = 2;

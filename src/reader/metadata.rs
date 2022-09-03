@@ -8,11 +8,10 @@ use crate::reader::type_descriptor::{
     FieldDescriptor, StringTable, TickUnit, TypeDescriptor, TypePool, Unit,
 };
 use crate::reader::{ChunkHeader, Error, Result};
+use crate::EVENT_TYPE_METADATA;
 use std::collections::HashMap;
 use std::io::{Read, Seek};
 use std::rc::Rc;
-
-const EVENT_TYPE_METADATA: i64 = 0;
 
 #[derive(Debug)]
 enum ElementType<'st> {

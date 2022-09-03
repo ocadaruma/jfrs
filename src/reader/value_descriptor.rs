@@ -3,9 +3,10 @@
 use crate::reader::byte_stream::{ByteStream, StringType};
 use crate::reader::metadata::Metadata;
 
-use crate::reader::type_descriptor::{FieldDescriptor, TypeDescriptor};
-use crate::reader::{Error, Result};
-use std::io::{Read};
+use crate::reader::constant_pool::ConstantPool;
+use crate::reader::type_descriptor::{FieldDescriptor, TypeDescriptor, TypePool};
+use crate::reader::{Chunk, Error, Result};
+use std::io::Read;
 
 #[derive(Debug)]
 pub enum ValueDescriptor {
@@ -50,6 +51,33 @@ impl ValueDescriptor {
         }
 
         Ok(ValueDescriptor::Object(obj))
+    }
+
+    pub fn get_field<'a>(&'a self, name: &str, chunk: &'a Chunk) -> Option<&'a ValueDescriptor> {
+        match self {
+            ValueDescriptor::Object(o) => Self::get_object_field(o, name, chunk),
+            ValueDescriptor::ConstantPool {
+                class_id,
+                constant_index,
+            } => match chunk.constant_pool.get(*class_id, *constant_index) {
+                Some(ValueDescriptor::Object(o)) => Self::get_object_field(o, name, chunk),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn get_object_field<'a>(
+        obj: &'a Object,
+        name: &str,
+        chunk: &Chunk,
+    ) -> Option<&'a ValueDescriptor> {
+        chunk
+            .metadata
+            .type_pool
+            .get(obj.class_id)
+            .and_then(|c| c.get_field(name))
+            .and_then(|(idx, _)| obj.fields.get(idx))
     }
 
     fn try_read_field_single<T: Read>(

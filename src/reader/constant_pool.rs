@@ -4,10 +4,9 @@ use crate::reader::metadata::Metadata;
 use crate::reader::value_descriptor::ValueDescriptor;
 use crate::reader::Error;
 use crate::reader::{ChunkHeader, Result};
+use crate::EVENT_TYPE_CONSTANT_POOL;
 use std::collections::HashMap;
 use std::io::{Read, Seek};
-
-const EVENT_TYPE_CONSTANT_POOL: i64 = 1;
 
 #[derive(Debug, Default)]
 pub struct PerTypePool {

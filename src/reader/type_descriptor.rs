@@ -6,6 +6,7 @@ use crate::reader::byte_stream::{ByteStream, StringType};
 use crate::reader::{Error, Result};
 use std::collections::HashMap;
 use std::io::Read;
+use std::ops::Index;
 use std::rc::Rc;
 
 /// String intern pool
@@ -65,6 +66,17 @@ pub struct TypeDescriptor {
     pub description: Option<Rc<str>>,
     pub experimental: bool,
     pub category: Vec<Rc<str>>,
+}
+
+impl TypeDescriptor {
+    pub fn get_field(&self, name: &str) -> Option<(usize, &FieldDescriptor)> {
+        for (idx, field) in self.fields.iter().enumerate() {
+            if field.name.as_ref() == name {
+                return Some((idx, field));
+            }
+        }
+        None
+    }
 }
 
 #[derive(Debug)]
