@@ -145,7 +145,6 @@ struct SettingElement<'st> {
 
 #[derive(Debug)]
 pub struct Metadata {
-    string_table: StringTable,
     pub type_pool: TypePool,
 }
 
@@ -171,10 +170,7 @@ impl Metadata {
         let string_table = StringTable::try_new(stream)?;
         let type_pool = Self::read_types(stream, &string_table)?;
 
-        Ok(Self {
-            string_table,
-            type_pool,
-        })
+        Ok(Self { type_pool })
     }
 
     fn read_types<T: Read>(

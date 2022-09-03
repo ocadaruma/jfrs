@@ -3,7 +3,6 @@
 use crate::reader::byte_stream::{ByteStream, StringType};
 use crate::reader::metadata::Metadata;
 
-
 use crate::reader::type_descriptor::{FieldDescriptor, TypeDescriptor};
 use crate::reader::{Chunk, Error, Result};
 use std::io::Read;
@@ -59,7 +58,7 @@ impl ValueDescriptor {
             ValueDescriptor::ConstantPool {
                 class_id,
                 constant_index,
-            } => match chunk.constant_pool.get(*class_id, *constant_index) {
+            } => match chunk.constant_pool.get(class_id, constant_index) {
                 Some(ValueDescriptor::Object(o)) => Self::get_object_field(o, name, chunk),
                 _ => None,
             },

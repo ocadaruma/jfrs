@@ -30,7 +30,7 @@ pub enum IntEncoding {
 #[macro_use]
 mod macros {
     macro_rules! read_num {
-        ($self:ident, $ty:ty, $size:expr) => {
+        ($self:ident, $ty:ty) => {
             return $self.read_exact().map(<$ty>::from_be_bytes)
         };
     }
@@ -60,30 +60,30 @@ impl<T: Read> ByteStream<T> {
     }
 
     pub fn read_u8(&mut self) -> Result<u8> {
-        read_num!(self, u8, 1);
+        read_num!(self, u8);
     }
 
     pub fn read_i8(&mut self) -> Result<i8> {
-        read_num!(self, i8, 1);
+        read_num!(self, i8);
     }
 
     pub fn read_i16(&mut self) -> Result<i16> {
         match self.int_encoding {
-            IntEncoding::Raw => read_num!(self, i16, 2),
+            IntEncoding::Raw => read_num!(self, i16),
             IntEncoding::Compressed => self.read_var_i64().map(|i| i as i16),
         }
     }
 
     pub fn read_i32(&mut self) -> Result<i32> {
         match self.int_encoding {
-            IntEncoding::Raw => read_num!(self, i32, 4),
+            IntEncoding::Raw => read_num!(self, i32),
             IntEncoding::Compressed => self.read_var_i64().map(|i| i as i32),
         }
     }
 
     pub fn read_i64(&mut self) -> Result<i64> {
         match self.int_encoding {
-            IntEncoding::Raw => read_num!(self, i64, 4),
+            IntEncoding::Raw => read_num!(self, i64),
             IntEncoding::Compressed => self.read_var_i64(),
         }
     }

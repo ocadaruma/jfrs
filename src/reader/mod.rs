@@ -5,11 +5,13 @@ use crate::reader::constant_pool::ConstantPool;
 use crate::reader::event::EventIterator;
 use crate::reader::metadata::Metadata;
 use crate::{Version, MAGIC, VERSION_1, VERSION_2};
-use std::io;
+use std::fmt::Formatter;
 use std::io::{Read, Seek};
+use std::{fmt, io};
 
 mod byte_stream;
 mod constant_pool;
+mod de;
 mod event;
 mod metadata;
 mod type_descriptor;
@@ -25,19 +27,37 @@ pub enum Error {
     UnsupportedVersion(Version),
     ClassNotFound(i64),
     IoError(io::Error),
+    DeserializeError(String),
 }
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::InvalidFormat => write!(f, "Invalid format"),
+            Error::InvalidStringIndex(i) => write!(f, "Invalid string index in pool: {}", i),
+            Error::InvalidString => write!(f, "Invalid string"),
+            Error::InvalidChar(e) => write!(f, "Invalid char: {}", e),
+            Error::UnsupportedVersion(v) => write!(f, "Unsupported version: {}", v),
+            Error::ClassNotFound(i) => write!(f, "Class not found for id: {}", i),
+            Error::IoError(e) => write!(f, "IO error: {}", e),
+            Error::DeserializeError(msg) => write!(f, "Failed to deserialize: {}", msg),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
 
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub struct ChunkHeader {
-    chunk_size: i64,
+    pub chunk_size: i64,
     constant_pool_offset: i64,
     metadata_offset: i64,
-    start_time_nanos: i64,
-    duration_nanos: i64,
-    start_ticks: i64,
-    ticks_per_second: i64,
+    pub start_time_nanos: i64,
+    pub duration_nanos: i64,
+    pub start_ticks: i64,
+    pub ticks_per_second: i64,
     features: i32,
     absolute_chunk_start_position: u64,
 }
@@ -178,11 +198,14 @@ mod tests {
     use super::*;
     use std::fs::File;
 
+    use crate::reader::de::Deserializer;
+    use crate::reader::types::jdk::ExecutionSample;
     use crate::reader::value_descriptor::{Primitive, ValueDescriptor};
+    use serde::Deserialize as De;
     use std::path::PathBuf;
 
     #[test]
-    fn test_read_chunk() {
+    fn test_read_single_chunk() {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-data/profiler-wall.jfr");
         let mut reader = JfrReader::new(File::open(path).unwrap());
 
@@ -200,7 +223,7 @@ mod tests {
             // constant_index: 203 for jdk.types.Symbol
             let field = chunk
                 .constant_pool
-                .get(30, 203)
+                .get(&30, &203)
                 .and_then(|c| c.get_field("string", &chunk))
                 .unwrap();
             if let ValueDescriptor::Primitive(Primitive::String(s)) = field {
@@ -233,5 +256,49 @@ mod tests {
         }
 
         assert_eq!(chunk_count, 3);
+    }
+
+    #[test]
+    fn test_read_recording() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-data/recording.jfr");
+        let mut reader = JfrReader::new(File::open(path).unwrap());
+
+        let mut chunk_count = 0;
+        while let Some(chunk) = reader.next() {
+            let chunk = chunk.unwrap();
+
+            // class_id:20 = java.lang.Class
+            assert_eq!(52, chunk.constant_pool.inner.get(&20).unwrap().inner.len());
+
+            chunk_count += 1;
+        }
+
+        assert_eq!(chunk_count, 1);
+    }
+
+    #[test]
+    fn test_de() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-data/profiler-wall.jfr");
+        let mut reader = JfrReader::new(File::open(path).unwrap());
+
+        let mut chunk_count = 0;
+        while let Some(chunk) = reader.next() {
+            let chunk = chunk.unwrap();
+            chunk_count += 1;
+            for event in reader
+                .events(&chunk)
+                .flatten()
+                .filter(|e| e.class.name.as_ref() == "jdk.ExecutionSample")
+            {
+                let des = Deserializer::new(&chunk, &event.value);
+                let sample = ExecutionSample::deserialize(des);
+                println!(
+                    "{:?}",
+                    sample.unwrap().sampled_thread.and_then(|f| f.java_name)
+                );
+            }
+        }
+
+        assert_eq!(chunk_count, 1);
     }
 }

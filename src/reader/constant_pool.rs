@@ -25,11 +25,11 @@ impl ConstantPool {
         metadata: &Metadata,
     ) -> Result<Self> {
         let mut constant_pool = Self::default();
-        let mut offset = header.absolute_chunk_start_position;
+        let mut offset = header.absolute_chunk_start_position as i64;
         let mut delta = header.constant_pool_offset;
         while delta != 0 {
-            offset += delta as u64;
-            stream.seek(offset)?;
+            offset += delta;
+            stream.seek(offset as u64)?;
             delta = Self::read_constant_pool_event(stream, &mut constant_pool, metadata)?;
         }
 
@@ -44,7 +44,7 @@ impl ConstantPool {
             .insert(constant_index, value);
     }
 
-    pub fn get(&self, class_id: i64, constant_index: i64) -> Option<&ValueDescriptor> {
+    pub fn get(&self, class_id: &i64, constant_index: &i64) -> Option<&ValueDescriptor> {
         self.inner
             .get(&class_id)
             .and_then(|p| p.inner.get(&constant_index))
