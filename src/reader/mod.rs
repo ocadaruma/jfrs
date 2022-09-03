@@ -288,14 +288,10 @@ mod tests {
             for event in reader
                 .events(&chunk)
                 .flatten()
-                .filter(|e| e.class.name.as_ref() == "jdk.ExecutionSample")
+                .filter(|e| e.class.name.as_ref() == "jdk.NativeMethodSample")
             {
                 let des = Deserializer::new(&chunk, &event.value);
                 let sample = ExecutionSample::deserialize(des);
-                println!(
-                    "{:?}",
-                    sample.unwrap().sampled_thread.and_then(|f| f.java_name)
-                );
             }
         }
 
