@@ -4,6 +4,7 @@ use serde::de::value::{BorrowedStrDeserializer, StrDeserializer};
 use serde::de::{DeserializeSeed, IntoDeserializer, Visitor};
 use serde::forward_to_deserialize_any;
 use std::fmt::Display;
+use crate::reader::event::Event;
 
 pub struct Deserializer<'de> {
     chunk: &'de Chunk,
@@ -23,6 +24,10 @@ impl serde::de::Error for Error {
     {
         Error::DeserializeError(msg.to_string())
     }
+}
+
+pub fn from_event<'a, T>(chunk: &'a Chunk, event: &'a Event) -> crate::reader::Result<T> where T: serde::de::Deserialize<'a> {
+    T::deserialize(Deserializer::new(chunk, &event.value))
 }
 
 struct ObjectDeserializer<'de> {

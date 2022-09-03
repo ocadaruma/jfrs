@@ -14,7 +14,10 @@ pub mod builtin {
         // Also, currently all str are supposed to be borrowed from deserializer so must be &str (not String)
         pub os_name: Option<&'a str>,
         pub os_thread_id: i64,
+        #[serde(default)]
         pub java_name: Option<&'a str>,
+        #[serde(default)]
+        pub java_thread_id: i64,
         #[serde(borrow)]
         pub group: Option<ThreadGroup<'a>>,
     }

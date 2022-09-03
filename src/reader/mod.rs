@@ -15,8 +15,8 @@ mod de;
 mod event;
 mod metadata;
 mod type_descriptor;
-mod types;
-mod value_descriptor;
+pub mod types;
+pub mod value_descriptor;
 
 #[derive(Debug)]
 pub enum Error {
@@ -90,7 +90,7 @@ impl ChunkHeader {
 
 #[derive(Debug)]
 pub struct Chunk {
-    header: ChunkHeader,
+    pub header: ChunkHeader,
     metadata: Metadata,
     constant_pool: ConstantPool,
 }
@@ -193,6 +193,8 @@ where
     }
 }
 
+pub use de::from_event;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -288,10 +290,17 @@ mod tests {
             for event in reader
                 .events(&chunk)
                 .flatten()
-                .filter(|e| e.class.name.as_ref() == "jdk.NativeMethodSample")
+                .filter(|e| e.class.name.as_ref() == "jdk.ExecutionSample")
             {
-                let des = Deserializer::new(&chunk, &event.value);
-                let sample = ExecutionSample::deserialize(des);
+                let sample: ExecutionSample = from_event(&chunk, &event).unwrap();
+                println!("{}", sample.sampled_thread.unwrap().os_name.unwrap());
+                // match event.value.get_field("sampledThread", &chunk)
+                //     .and_then(|t| t.get_field("osName", &chunk)) {
+                //     Some(ValueDescriptor::Primitive(Primitive::String(s))) => {
+                //
+                //     }
+                //     _ => {}
+                // }
             }
         }
 
