@@ -1,7 +1,7 @@
 use crate::reader::byte_stream::ByteStream;
 use crate::reader::type_descriptor::TypeDescriptor;
 use crate::reader::value_descriptor::ValueDescriptor;
-use crate::reader::{Chunk, Error, Result};
+use crate::reader::{Chunk, Error, HeapByteStream, Result};
 use crate::{EVENT_TYPE_CONSTANT_POOL, EVENT_TYPE_METADATA};
 use std::io::{Read, Seek};
 
@@ -11,17 +11,14 @@ pub struct Event<'a> {
     pub value: ValueDescriptor,
 }
 
-pub struct EventIterator<'a, T> {
+pub struct EventIterator<'a> {
     chunk: &'a Chunk,
-    stream: &'a mut ByteStream<T>,
+    stream: HeapByteStream,
     offset: u64,
 }
 
-impl<'a, T> EventIterator<'a, T>
-where
-    T: Read + Seek,
-{
-    pub fn new(chunk: &'a Chunk, stream: &'a mut ByteStream<T>) -> Self {
+impl<'a> EventIterator<'a> {
+    pub fn new(chunk: &'a Chunk, stream: HeapByteStream) -> Self {
         Self {
             chunk,
             stream,
@@ -34,7 +31,7 @@ where
 
         while self.offset < end_offset {
             self.stream
-                .seek(self.chunk.header.absolute_body_start_position() + self.offset)?;
+                .seek(self.chunk.header.body_start_offset() + self.offset)?;
 
             let size = self.stream.read_i32()?;
             let event_type = self.stream.read_i64()?;
@@ -49,8 +46,11 @@ where
                         .type_pool
                         .get(event_type)
                         .ok_or(Error::ClassNotFound(event_type))?;
-                    let value =
-                        ValueDescriptor::try_new(self.stream, event_type, &self.chunk.metadata)?;
+                    let value = ValueDescriptor::try_new(
+                        &mut self.stream,
+                        event_type,
+                        &self.chunk.metadata,
+                    )?;
 
                     return Ok(Some(Event {
                         class: type_desc,
@@ -63,10 +63,7 @@ where
     }
 }
 
-impl<'a, T> Iterator for EventIterator<'a, T>
-where
-    T: Read + Seek,
-{
+impl<'a> Iterator for EventIterator<'a> {
     type Item = Result<Event<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {

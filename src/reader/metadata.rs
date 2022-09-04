@@ -153,7 +153,7 @@ impl Metadata {
         stream: &mut ByteStream<T>,
         header: &ChunkHeader,
     ) -> Result<Self> {
-        stream.seek(header.absolute_metadata_start_position())?;
+        stream.seek(header.metadata_offset as u64)?;
 
         // size
         stream.read_i32()?;

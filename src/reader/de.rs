@@ -1,10 +1,10 @@
+use crate::reader::event::Event;
 use crate::reader::value_descriptor::{Object, Primitive, ValueDescriptor};
 use crate::reader::{Chunk, Error};
 use serde::de::value::{BorrowedStrDeserializer, StrDeserializer};
 use serde::de::{DeserializeSeed, IntoDeserializer, Visitor};
 use serde::forward_to_deserialize_any;
 use std::fmt::Display;
-use crate::reader::event::Event;
 
 pub struct Deserializer<'de> {
     chunk: &'de Chunk,
@@ -26,7 +26,10 @@ impl serde::de::Error for Error {
     }
 }
 
-pub fn from_event<'a, T>(chunk: &'a Chunk, event: &'a Event) -> crate::reader::Result<T> where T: serde::de::Deserialize<'a> {
+pub fn from_event<'a, T>(chunk: &'a Chunk, event: &'a Event) -> crate::reader::Result<T>
+where
+    T: serde::de::Deserialize<'a>,
+{
     T::deserialize(Deserializer::new(chunk, &event.value))
 }
 
@@ -104,8 +107,8 @@ impl<'de> serde::Deserializer<'de> for Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        use ValueDescriptor::Primitive;
         use crate::reader::value_descriptor::Primitive::*;
+        use ValueDescriptor::Primitive;
 
         match self.value {
             Primitive(Integer(v)) => visitor.visit_i32(*v),
@@ -117,7 +120,9 @@ impl<'de> serde::Deserializer<'de> for Deserializer<'de> {
             Primitive(Short(v)) => visitor.visit_i16(*v),
             Primitive(Byte(v)) => visitor.visit_i8(*v),
             Primitive(String(v)) => visitor.visit_borrowed_str(v.as_str()),
-            Primitive(NullString) => Err(Error::DeserializeError("Unexpected null string".to_string())),
+            Primitive(NullString) => Err(Error::DeserializeError(
+                "Unexpected null string".to_string(),
+            )),
             ValueDescriptor::Object(obj) => visitor.visit_map(ObjectDeserializer {
                 chunk: self.chunk,
                 field_idx: 0,
@@ -133,21 +138,28 @@ impl<'de> serde::Deserializer<'de> for Deserializer<'de> {
                 constant_index,
             } => match self.chunk.constant_pool.get(class_id, constant_index) {
                 Some(value) => Self::deserialize_any(Deserializer::new(self.chunk, value), visitor),
-                None => Err(Error::DeserializeError(format!("Not found in constant pool: class_id={}, index={}", class_id, constant_index)))
-            }
+                None => Err(Error::DeserializeError(format!(
+                    "Not found in constant pool: class_id={}, index={}",
+                    class_id, constant_index
+                ))),
+            },
         }
     }
 
-    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value, Self::Error> where V: Visitor<'de> {
+    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
         match self.value {
             ValueDescriptor::Primitive(Primitive::NullString) => visitor.visit_none(),
             ValueDescriptor::ConstantPool {
-                class_id, constant_index
+                class_id,
+                constant_index,
             } => match self.chunk.constant_pool.get(class_id, constant_index) {
                 Some(value) => visitor.visit_some(Deserializer::new(self.chunk, value)),
                 None => visitor.visit_none(),
             },
-            _ => visitor.visit_some(self)
+            _ => visitor.visit_some(self),
         }
     }
 

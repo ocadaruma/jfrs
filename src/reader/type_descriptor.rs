@@ -6,8 +6,8 @@ use crate::reader::byte_stream::{ByteStream, StringType};
 use crate::reader::{Error, Result};
 use std::io::Read;
 
-use std::rc::Rc;
 use rustc_hash::FxHashMap;
+use std::rc::Rc;
 
 /// String intern pool
 #[derive(Debug)]

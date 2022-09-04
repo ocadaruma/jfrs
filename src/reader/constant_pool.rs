@@ -5,8 +5,8 @@ use crate::reader::value_descriptor::ValueDescriptor;
 use crate::reader::Error;
 use crate::reader::{ChunkHeader, Result};
 use crate::EVENT_TYPE_CONSTANT_POOL;
-use std::io::{Read, Seek};
 use rustc_hash::FxHashMap;
+use std::io::{Read, Seek};
 
 #[derive(Debug, Default)]
 pub struct PerTypePool {
@@ -25,7 +25,7 @@ impl ConstantPool {
         metadata: &Metadata,
     ) -> Result<Self> {
         let mut constant_pool = Self::default();
-        let mut offset = header.absolute_chunk_start_position as i64;
+        let mut offset = 0;
         let mut delta = header.constant_pool_offset;
         while delta != 0 {
             offset += delta;

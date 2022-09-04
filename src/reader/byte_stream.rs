@@ -49,6 +49,16 @@ impl<T: Read> ByteStream<T> {
         }
     }
 
+    pub fn read_as_bytes(&mut self, bytes: usize) -> Result<Vec<u8>> {
+        let mut buf = Vec::with_capacity(bytes);
+        self.inner
+            .by_ref()
+            .take(bytes as u64)
+            .read_to_end(&mut buf)
+            .map_err(Error::IoError)?;
+        Ok(buf)
+    }
+
     pub fn set_int_encoding(&mut self, encoding: IntEncoding) {
         self.int_encoding = encoding;
     }
