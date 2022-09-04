@@ -225,10 +225,9 @@ mod tests {
     use super::*;
     use std::fs::File;
 
-    
     use crate::reader::types::jdk::ExecutionSample;
     use crate::reader::value_descriptor::{Primitive, ValueDescriptor};
-    
+
     use std::path::PathBuf;
 
     #[test]

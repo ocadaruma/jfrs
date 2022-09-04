@@ -1,7 +1,7 @@
 use crate::reader::event::Event;
 use crate::reader::value_descriptor::{Object, Primitive, ValueDescriptor};
 use crate::reader::{Chunk, Error};
-use serde::de::value::{StrDeserializer};
+use serde::de::value::StrDeserializer;
 use serde::de::{DeserializeSeed, IntoDeserializer, Visitor};
 use serde::forward_to_deserialize_any;
 use std::fmt::Display;
