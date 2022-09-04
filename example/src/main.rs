@@ -26,16 +26,16 @@ fn main() {
             let chunk = chunk.unwrap();
             // TODO class_name should not be exposed directly
             for event in reader.events(&chunk).flatten().filter(|e| e.class.name.as_ref() == "jdk.ExecutionSample") {
-                let sample: ExecutionSample = from_event(&chunk, &event).unwrap();
+                // let sample: ExecutionSample = from_event(&chunk, &event).unwrap();
                 event_count += 1;
-                os_name_total_length += sample.sampled_thread.unwrap().os_name.unwrap().len();
-                // match event.value.get_field("sampledThread", &chunk)
-                //     .and_then(|t| t.get_field("osName", &chunk)) {
-                //     Some(ValueDescriptor::Primitive(Primitive::String(s))) => {
-                //         os_name_total_length += s.len();
-                //     }
-                //     _ => {}
-                // }
+                // os_name_total_length += sample.sampled_thread.unwrap().os_name.unwrap().len();
+                match event.value.get_field("sampledThread", &chunk)
+                    .and_then(|t| t.get_field("osName", &chunk)) {
+                    Some(ValueDescriptor::Primitive(Primitive::String(s))) => {
+                        os_name_total_length += s.len();
+                    }
+                    _ => {}
+                }
             }
         }
         println!("event_count: {}, os_name_total_length: {}", event_count, os_name_total_length);
