@@ -1,10 +1,9 @@
-use jfrs::reader::types::jdk::ExecutionSample;
 use jfrs::reader::value_descriptor::Primitive;
 use jfrs::reader::value_descriptor::ValueDescriptor;
-use jfrs::reader::{from_event, JfrReader};
+use jfrs::reader::JfrReader;
 use std::env;
 use std::fs::File;
-use std::io::{BufReader, Cursor, Read};
+use std::io::BufReader;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
