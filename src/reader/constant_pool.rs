@@ -39,15 +39,15 @@ impl ConstantPool {
     pub fn register(&mut self, class_id: i64, constant_index: i64, value: ValueDescriptor) {
         self.inner
             .entry(class_id)
-            .or_insert(PerTypePool::default())
+            .or_insert_with(PerTypePool::default)
             .inner
             .insert(constant_index, value);
     }
 
     pub fn get(&self, class_id: &i64, constant_index: &i64) -> Option<&ValueDescriptor> {
         self.inner
-            .get(&class_id)
-            .and_then(|p| p.inner.get(&constant_index))
+            .get(class_id)
+            .and_then(|p| p.inner.get(constant_index))
     }
 
     fn read_constant_pool_event<T: Read + Seek>(

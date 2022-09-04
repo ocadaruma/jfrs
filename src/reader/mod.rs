@@ -95,7 +95,7 @@ pub struct ChunkReader {
 }
 
 impl ChunkReader {
-    pub fn events<'a>(self, chunk: &'a Chunk) -> EventIterator<'a> {
+    pub fn events(self, chunk: &Chunk) -> EventIterator<'_> {
         EventIterator::new(chunk, self.stream)
     }
 }
@@ -185,7 +185,7 @@ impl<'a, T: Read + Seek> ChunkIterator<'a, T> {
 
     fn read_chunk_header(stream: &mut HeapByteStream, chunk_size: i64) -> Result<ChunkHeader> {
         Ok(ChunkHeader {
-            chunk_size: chunk_size,
+            chunk_size,
             constant_pool_offset: stream.read_i64()?,
             metadata_offset: stream.read_i64()?,
             start_time_nanos: stream.read_i64()?,

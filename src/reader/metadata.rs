@@ -44,24 +44,27 @@ impl<'st> ElementType<'st> {
                 ElementType::Region(r) => e.region = Some(r),
                 _ => {}
             },
-            ElementType::Metadata(e) => match child {
-                ElementType::Class(c) => e.classes.push(c),
-                _ => {}
-            },
+            ElementType::Metadata(e) => {
+                if let ElementType::Class(c) = child {
+                    e.classes.push(c);
+                }
+            }
             ElementType::Class(e) => match child {
                 ElementType::Field(f) => e.fields.push(f),
                 ElementType::Annotation(a) => e.annotations.push(a),
                 ElementType::Setting(s) => e.setting = Some(s),
                 _ => {}
             },
-            ElementType::Field(e) => match child {
-                ElementType::Annotation(a) => e.annotations.push(a),
-                _ => {}
-            },
-            ElementType::Setting(e) => match child {
-                ElementType::Annotation(a) => e.annotations.push(a),
-                _ => {}
-            },
+            ElementType::Field(e) => {
+                if let ElementType::Annotation(a) = child {
+                    e.annotations.push(a);
+                }
+            }
+            ElementType::Setting(e) => {
+                if let ElementType::Annotation(a) = child {
+                    e.annotations.push(a);
+                }
+            }
             _ => {}
         }
     }
@@ -304,16 +307,12 @@ impl Metadata {
                 "jdk.jfr.Experimental" => desc.experimental = true,
                 "jdk.jfr.Category" => {
                     let mut idx = 0;
-                    loop {
-                        if let Some(v) = annot
-                            .attributes
-                            .get(format!("value-{}", idx).as_str())
-                            .cloned()
-                        {
-                            desc.category.push(v);
-                        } else {
-                            break;
-                        }
+                    while let Some(v) = annot
+                        .attributes
+                        .get(format!("value-{}", idx).as_str())
+                        .cloned()
+                    {
+                        desc.category.push(v);
                         idx += 1;
                     }
                 }
