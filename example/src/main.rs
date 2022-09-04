@@ -13,10 +13,10 @@ fn main() {
     let iteration: usize = args[2].parse().unwrap();
 
     for _ in 0..iteration {
-        // let mut buf = Vec::new();
-        // BufReader::new(File::open(path).unwrap()).read_to_end(&mut buf).unwrap();
-        // let mut reader = JfrReader::new(Cursor::new(buf));
-        let mut reader = JfrReader::new(BufReader::new(File::open(path).unwrap()));
+        let mut buf = Vec::new();
+        BufReader::new(File::open(path).unwrap()).read_to_end(&mut buf).unwrap();
+        let mut reader = JfrReader::new(Cursor::new(buf));
+        // let mut reader = JfrReader::new(BufReader::new(File::open(path).unwrap()));
 
         let mut event_count = 0;
         let mut os_name_total_length = 0;
