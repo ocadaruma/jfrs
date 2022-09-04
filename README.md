@@ -14,7 +14,10 @@ fn main() {
     let mut reader = JfrReader::new(File::open("/path/to/recording.jfr").unwrap());
 
     for (reader, chunk) in reader.chunks().flatten() {
-        for event in reader.events(&chunk).filter(|e| e.class.name() == "jdk.ExecutionSample") {
+        for event in reader.events(&chunk)
+            .flatten()
+            .filter(|e| e.class.name.as_ref() == "jdk.ExecutionSample")
+        {
             let thread_name = event.value
                 .get_field("sampledThread", &chunk)
                 .and_then(|f| f.get_field("osName", &chunk))
@@ -44,7 +47,10 @@ fn main() {
     let mut reader = JfrReader::new(File::open("/path/to/recording.jfr").unwrap());
 
     for (reader, chunk) in reader.chunks().flatten() {
-        for event in reader.events(&chunk).filter(|e| e.class.name() == "jdk.ExecutionSample") {
+        for event in reader.events(&chunk)
+            .flatten()
+            .filter(|e| e.class.name.as_ref() == "jdk.ExecutionSample")
+        {
             let sample: ExecutionSample = from_event(&chunk, &event).unwrap();
             println!("sampled thread: {}", sample.sampled_thread.and_then(|t| t.os_name).unwrap());
         }
