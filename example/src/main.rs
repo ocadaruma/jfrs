@@ -17,11 +17,10 @@ fn main() {
 
         println!("started");
         for (reader, chunk) in reader.chunks().flatten() {
-            // TODO class_name should not be exposed directly?
             for event in reader
                 .events(&chunk)
                 .flatten()
-                .filter(|e| e.class.name.as_ref() == "jdk.ExecutionSample")
+                .filter(|e| e.class.name() == "jdk.ExecutionSample")
             {
                 // let sample: ExecutionSample = from_event(&event).unwrap();
                 // os_name_total_length += sample.sampled_thread.unwrap().os_name.unwrap().len();

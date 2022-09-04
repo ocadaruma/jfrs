@@ -56,16 +56,16 @@ impl TypePool {
 #[derive(Debug)]
 pub struct TypeDescriptor {
     pub class_id: i64,
-    pub name: Rc<str>,
-    pub super_type: Option<Rc<str>>,
+    pub(crate) name: Rc<str>,
+    pub(crate) super_type: Option<Rc<str>>,
     pub simple_type: bool,
     pub fields: Vec<FieldDescriptor>,
 
     // these fields are filled by annotations
-    pub label: Option<Rc<str>>,
-    pub description: Option<Rc<str>>,
+    pub(crate) label: Option<Rc<str>>,
+    pub(crate) description: Option<Rc<str>>,
     pub experimental: bool,
-    pub category: Vec<Rc<str>>,
+    pub(crate) category: Vec<Rc<str>>,
 }
 
 impl TypeDescriptor {
@@ -77,20 +77,54 @@ impl TypeDescriptor {
         }
         None
     }
+
+    pub fn name(&self) -> &str {
+        self.name.as_ref()
+    }
+
+    pub fn super_type(&self) -> Option<&str> {
+        self.super_type.as_ref().map(|s| s.as_ref())
+    }
+
+    pub fn label(&self) -> Option<&str> {
+        self.label.as_ref().map(|s| s.as_ref())
+    }
+
+    pub fn description(&self) -> Option<&str> {
+        self.description.as_ref().map(|s| s.as_ref())
+    }
+
+    pub fn category(&self) -> impl Iterator<Item = &str> {
+        self.category.iter().map(|s| s.as_ref())
+    }
 }
 
 #[derive(Debug)]
 pub struct FieldDescriptor {
     pub class_id: i64,
-    pub name: Rc<str>,
-    pub label: Option<Rc<str>>,
-    pub description: Option<Rc<str>>,
+    pub(crate) name: Rc<str>,
+    pub(crate) label: Option<Rc<str>>,
+    pub(crate) description: Option<Rc<str>>,
     pub experimental: bool,
     pub constant_pool: bool,
     pub array_type: bool,
     pub unsigned: bool,
     pub unit: Option<Unit>,
     pub tick_unit: Option<TickUnit>,
+}
+
+impl FieldDescriptor {
+    pub fn name(&self) -> &str {
+        self.name.as_ref()
+    }
+
+    pub fn label(&self) -> Option<&str> {
+        self.label.as_ref().map(|s| s.as_ref())
+    }
+
+    pub fn description(&self) -> Option<&str> {
+        self.description.as_ref().map(|s| s.as_ref())
+    }
 }
 
 #[derive(Debug)]

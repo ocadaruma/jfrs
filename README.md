@@ -16,7 +16,7 @@ fn main() {
     for (reader, chunk) in reader.chunks().flatten() {
         for event in reader.events(&chunk)
             .flatten()
-            .filter(|e| e.class.name.as_ref() == "jdk.ExecutionSample")
+            .filter(|e| e.class.name() == "jdk.ExecutionSample")
         {
             let thread_name = event.value()
                 .get_field("sampledThread")
@@ -46,7 +46,7 @@ fn main() {
     for (reader, chunk) in reader.chunks().flatten() {
         for event in reader.events(&chunk)
             .flatten()
-            .filter(|e| e.class.name.as_ref() == "jdk.ExecutionSample")
+            .filter(|e| e.class.name() == "jdk.ExecutionSample")
         {
             let sample: ExecutionSample = from_event(&event).unwrap();
             println!("sampled thread: {}", sample.sampled_thread.and_then(|t| t.os_name).unwrap());

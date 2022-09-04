@@ -98,7 +98,7 @@ impl ValueDescriptor {
         stream: &mut ByteStream<T>,
         type_desc: &TypeDescriptor,
     ) -> Result<Option<ValueDescriptor>> {
-        let value = match type_desc.name.as_ref() {
+        let value = match type_desc.name() {
             "int" => Some(ValueDescriptor::Primitive(Primitive::Integer(
                 stream.read_i32()?,
             ))),

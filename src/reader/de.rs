@@ -54,7 +54,7 @@ impl<'de> serde::de::MapAccess<'de> for ObjectDeserializer<'de> {
             .metadata
             .type_pool
             .get(self.value.class_id)
-            .map(|t| t.fields[self.field_idx].name.as_ref())
+            .map(|t| t.fields[self.field_idx].name())
         {
             let key: StrDeserializer<Self::Error> = key.into_deserializer();
             let key: K::Value = seed.deserialize(key)?;
