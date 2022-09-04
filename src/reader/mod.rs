@@ -225,10 +225,10 @@ mod tests {
     use super::*;
     use std::fs::File;
 
-    use crate::reader::de::Deserializer;
+    
     use crate::reader::types::jdk::ExecutionSample;
     use crate::reader::value_descriptor::{Primitive, ValueDescriptor};
-    use serde::Deserialize as De;
+    
     use std::path::PathBuf;
 
     #[test]
@@ -287,7 +287,7 @@ mod tests {
         let mut reader = JfrReader::new(File::open(path).unwrap());
 
         let mut chunk_count = 0;
-        for (reader, chunk) in reader.chunks().flatten() {
+        for (_reader, chunk) in reader.chunks().flatten() {
             // class_id:20 = java.lang.Class
             assert_eq!(52, chunk.constant_pool.inner.get(&20).unwrap().inner.len());
             chunk_count += 1;

@@ -1,9 +1,9 @@
-use crate::reader::byte_stream::ByteStream;
+
 use crate::reader::type_descriptor::TypeDescriptor;
 use crate::reader::value_descriptor::ValueDescriptor;
 use crate::reader::{Chunk, Error, HeapByteStream, Result};
 use crate::{EVENT_TYPE_CONSTANT_POOL, EVENT_TYPE_METADATA};
-use std::io::{Read, Seek};
+use std::io::{Seek};
 
 #[derive(Debug)]
 pub struct Event<'a> {
