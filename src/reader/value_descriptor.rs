@@ -32,13 +32,13 @@ impl ValueDescriptor {
 
         let mut obj = Object {
             class_id: type_desc.class_id,
-            fields: vec![],
+            fields: Vec::with_capacity(type_desc.fields.len()),
         };
 
         for field_desc in type_desc.fields.iter() {
             let value = if field_desc.array_type {
-                let mut elems = vec![];
-                let count = stream.read_i32()?;
+                let count = stream.read_i32()? as usize;
+                let mut elems = Vec::with_capacity(count);
                 for _ in 0..count {
                     elems.push(Self::try_read_field_single(stream, field_desc, metadata)?);
                 }

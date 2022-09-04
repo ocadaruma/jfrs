@@ -252,7 +252,7 @@ impl Metadata {
                     .ok_or(Error::InvalidFormat)?,
                 super_type: class_element.super_type.cloned(),
                 simple_type: class_element.simple_type.unwrap_or(false),
-                fields: vec![],
+                fields: Vec::with_capacity(class_element.fields.len()),
                 label: None,
                 description: None,
                 experimental: false,
