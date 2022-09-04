@@ -1,0 +1,415 @@
+<?xml version="1.0" standalone="no"?><!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg version="1.1" width="1200" height="342" onload="init(evt)" viewBox="0 0 1200 342" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:fg="http://github.com/jonhoo/inferno"><!--Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples.--><!--NOTES: --><defs><linearGradient id="background" y1="0" y2="1" x1="0" x2="0"><stop stop-color="#eeeeee" offset="5%"/><stop stop-color="#eeeeb0" offset="95%"/></linearGradient></defs><style type="text/css">
+text { font-family:"Verdana"; font-size:12px; fill:rgb(0,0,0); }
+#title { text-anchor:middle; font-size:17px; }
+#matched { text-anchor:end; }
+#search { text-anchor:end; opacity:0.1; cursor:pointer; }
+#search:hover, #search.show { opacity:1; }
+#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+#unzoom { cursor:pointer; }
+#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+.hide { display:none; }
+.parent { opacity:0.5; }
+</style><script type="text/ecmascript"><![CDATA[
+        var nametype = 'Function:';
+        var fontsize = 12;
+        var fontwidth = 0.59;
+        var xpad = 10;
+        var inverted = false;
+        var searchcolor = 'rgb(230,0,230)';
+        var fluiddrawing = true;
+        var truncate_text_right = false;
+    ]]><![CDATA["use strict";
+var details, searchbtn, unzoombtn, matchedtxt, svg, searching, frames;
+function init(evt) {
+    details = document.getElementById("details").firstChild;
+    searchbtn = document.getElementById("search");
+    unzoombtn = document.getElementById("unzoom");
+    matchedtxt = document.getElementById("matched");
+    svg = document.getElementsByTagName("svg")[0];
+    frames = document.getElementById("frames");
+    total_samples = parseInt(frames.attributes.total_samples.value);
+    searching = 0;
+
+    // Use GET parameters to restore a flamegraph's state.
+    var restore_state = function() {
+        var params = get_params();
+        if (params.x && params.y)
+            zoom(find_group(document.querySelector('[*|x="' + params.x + '"][y="' + params.y + '"]')));
+        if (params.s)
+            search(params.s);
+    };
+
+    if (fluiddrawing) {
+        // Make width dynamic so the SVG fits its parent's width.
+        svg.removeAttribute("width");
+        // Edge requires us to have a viewBox that gets updated with size changes.
+        var isEdge = /Edge\/\d./i.test(navigator.userAgent);
+        var update_for_width_change = function() {
+            if (isEdge) {
+                svg.attributes.viewBox.value = "0 0 " + svg.width.baseVal.value + " " + svg.height.baseVal.value;
+            }
+
+            // Keep consistent padding on left and right of frames container.
+            frames.attributes.width.value = svg.width.baseVal.value - xpad * 2;
+
+            // Text truncation needs to be adjusted for the current width.
+            var el = frames.children;
+            for(var i = 0; i < el.length; i++) {
+                update_text(el[i]);
+            }
+
+            // Keep search elements at a fixed distance from right edge.
+            var svgWidth = svg.width.baseVal.value;
+            searchbtn.attributes.x.value = svgWidth - xpad;
+            matchedtxt.attributes.x.value = svgWidth - xpad;
+        };
+        window.addEventListener('resize', function() {
+            update_for_width_change();
+        });
+        // This needs to be done asynchronously for Safari to work.
+        setTimeout(function() {
+            unzoom();
+            update_for_width_change();
+            restore_state();
+            if (!isEdge) {
+                svg.removeAttribute("viewBox");
+            }
+        }, 0);
+    } else {
+        restore_state();
+    }
+}
+// event listeners
+window.addEventListener("click", function(e) {
+    var target = find_group(e.target);
+    if (target) {
+        if (target.nodeName == "a") {
+            if (e.ctrlKey === false) return;
+            e.preventDefault();
+        }
+        if (target.classList.contains("parent")) unzoom();
+        zoom(target);
+
+        // set parameters for zoom state
+        var el = target.querySelector("rect");
+        if (el && el.attributes && el.attributes.y && el.attributes["fg:x"]) {
+            var params = get_params()
+            params.x = el.attributes["fg:x"].value;
+            params.y = el.attributes.y.value;
+            history.replaceState(null, null, parse_params(params));
+        }
+    }
+    else if (e.target.id == "unzoom") {
+        unzoom();
+
+        // remove zoom state
+        var params = get_params();
+        if (params.x) delete params.x;
+        if (params.y) delete params.y;
+        history.replaceState(null, null, parse_params(params));
+    }
+    else if (e.target.id == "search") search_prompt();
+}, false)
+// mouse-over for info
+// show
+window.addEventListener("mouseover", function(e) {
+    var target = find_group(e.target);
+    if (target) details.nodeValue = nametype + " " + g_to_text(target);
+}, false)
+// clear
+window.addEventListener("mouseout", function(e) {
+    var target = find_group(e.target);
+    if (target) details.nodeValue = ' ';
+}, false)
+// ctrl-F for search
+window.addEventListener("keydown",function (e) {
+    if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+        e.preventDefault();
+        search_prompt();
+    }
+}, false)
+// functions
+function get_params() {
+    var params = {};
+    var paramsarr = window.location.search.substr(1).split('&');
+    for (var i = 0; i < paramsarr.length; ++i) {
+        var tmp = paramsarr[i].split("=");
+        if (!tmp[0] || !tmp[1]) continue;
+        params[tmp[0]]  = decodeURIComponent(tmp[1]);
+    }
+    return params;
+}
+function parse_params(params) {
+    var uri = "?";
+    for (var key in params) {
+        uri += key + '=' + encodeURIComponent(params[key]) + '&';
+    }
+    if (uri.slice(-1) == "&")
+        uri = uri.substring(0, uri.length - 1);
+    if (uri == '?')
+        uri = window.location.href.split('?')[0];
+    return uri;
+}
+function find_child(node, selector) {
+    var children = node.querySelectorAll(selector);
+    if (children.length) return children[0];
+    return;
+}
+function find_group(node) {
+    var parent = node.parentElement;
+    if (!parent) return;
+    if (parent.id == "frames") return node;
+    return find_group(parent);
+}
+function orig_save(e, attr, val) {
+    if (e.attributes["fg:orig_" + attr] != undefined) return;
+    if (e.attributes[attr] == undefined) return;
+    if (val == undefined) val = e.attributes[attr].value;
+    e.setAttribute("fg:orig_" + attr, val);
+}
+function orig_load(e, attr) {
+    if (e.attributes["fg:orig_"+attr] == undefined) return;
+    e.attributes[attr].value = e.attributes["fg:orig_" + attr].value;
+    e.removeAttribute("fg:orig_" + attr);
+}
+function g_to_text(e) {
+    var text = find_child(e, "title").firstChild.nodeValue;
+    return (text)
+}
+function g_to_func(e) {
+    var func = g_to_text(e);
+    // if there's any manipulation we want to do to the function
+    // name before it's searched, do it here before returning.
+    return (func);
+}
+function update_text(e) {
+    var r = find_child(e, "rect");
+    var t = find_child(e, "text");
+    var w = parseFloat(r.attributes.width.value) * frames.attributes.width.value / 100 - 3;
+    var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+    t.attributes.x.value = format_percent((parseFloat(r.attributes.x.value) + (100 * 3 / frames.attributes.width.value)));
+    // Smaller than this size won't fit anything
+    if (w < 2 * fontsize * fontwidth) {
+        t.textContent = "";
+        return;
+    }
+    t.textContent = txt;
+    // Fit in full text width
+    if (/^ *\$/.test(txt) || t.getComputedTextLength() < w)
+        return;
+    if (truncate_text_right) {
+        // Truncate the right side of the text.
+        for (var x = txt.length - 2; x > 0; x--) {
+            if (t.getSubStringLength(0, x + 2) <= w) {
+                t.textContent = txt.substring(0, x) + "..";
+                return;
+            }
+        }
+    } else {
+        // Truncate the left side of the text.
+        for (var x = 2; x < txt.length; x++) {
+            if (t.getSubStringLength(x - 2, txt.length) <= w) {
+                t.textContent = ".." + txt.substring(x, txt.length);
+                return;
+            }
+        }
+    }
+    t.textContent = "";
+}
+// zoom
+function zoom_reset(e) {
+    if (e.tagName == "rect") {
+        e.attributes.x.value = format_percent(100 * parseInt(e.attributes["fg:x"].value) / total_samples);
+        e.attributes.width.value = format_percent(100 * parseInt(e.attributes["fg:w"].value) / total_samples);
+    }
+    if (e.childNodes == undefined) return;
+    for(var i = 0, c = e.childNodes; i < c.length; i++) {
+        zoom_reset(c[i]);
+    }
+}
+function zoom_child(e, x, zoomed_width_samples) {
+    if (e.tagName == "text") {
+        var parent_x = parseFloat(find_child(e.parentNode, "rect[x]").attributes.x.value);
+        e.attributes.x.value = format_percent(parent_x + (100 * 3 / frames.attributes.width.value));
+    } else if (e.tagName == "rect") {
+        e.attributes.x.value = format_percent(100 * (parseInt(e.attributes["fg:x"].value) - x) / zoomed_width_samples);
+        e.attributes.width.value = format_percent(100 * parseInt(e.attributes["fg:w"].value) / zoomed_width_samples);
+    }
+    if (e.childNodes == undefined) return;
+    for(var i = 0, c = e.childNodes; i < c.length; i++) {
+        zoom_child(c[i], x, zoomed_width_samples);
+    }
+}
+function zoom_parent(e) {
+    if (e.attributes) {
+        if (e.attributes.x != undefined) {
+            e.attributes.x.value = "0.0%";
+        }
+        if (e.attributes.width != undefined) {
+            e.attributes.width.value = "100.0%";
+        }
+    }
+    if (e.childNodes == undefined) return;
+    for(var i = 0, c = e.childNodes; i < c.length; i++) {
+        zoom_parent(c[i]);
+    }
+}
+function zoom(node) {
+    var attr = find_child(node, "rect").attributes;
+    var width = parseInt(attr["fg:w"].value);
+    var xmin = parseInt(attr["fg:x"].value);
+    var xmax = xmin + width;
+    var ymin = parseFloat(attr.y.value);
+    unzoombtn.classList.remove("hide");
+    var el = frames.children;
+    for (var i = 0; i < el.length; i++) {
+        var e = el[i];
+        var a = find_child(e, "rect").attributes;
+        var ex = parseInt(a["fg:x"].value);
+        var ew = parseInt(a["fg:w"].value);
+        // Is it an ancestor
+        if (!inverted) {
+            var upstack = parseFloat(a.y.value) > ymin;
+        } else {
+            var upstack = parseFloat(a.y.value) < ymin;
+        }
+        if (upstack) {
+            // Direct ancestor
+            if (ex <= xmin && (ex+ew) >= xmax) {
+                e.classList.add("parent");
+                zoom_parent(e);
+                update_text(e);
+            }
+            // not in current path
+            else
+                e.classList.add("hide");
+        }
+        // Children maybe
+        else {
+            // no common path
+            if (ex < xmin || ex >= xmax) {
+                e.classList.add("hide");
+            }
+            else {
+                zoom_child(e, xmin, width);
+                update_text(e);
+            }
+        }
+    }
+}
+function unzoom() {
+    unzoombtn.classList.add("hide");
+    var el = frames.children;
+    for(var i = 0; i < el.length; i++) {
+        el[i].classList.remove("parent");
+        el[i].classList.remove("hide");
+        zoom_reset(el[i]);
+        update_text(el[i]);
+    }
+}
+// search
+function reset_search() {
+    var el = document.querySelectorAll("#frames rect");
+    for (var i = 0; i < el.length; i++) {
+        orig_load(el[i], "fill")
+    }
+    var params = get_params();
+    delete params.s;
+    history.replaceState(null, null, parse_params(params));
+}
+function search_prompt() {
+    if (!searching) {
+        var term = prompt("Enter a search term (regexp " +
+            "allowed, eg: ^ext4_)", "");
+        if (term != null) {
+            search(term)
+        }
+    } else {
+        reset_search();
+        searching = 0;
+        searchbtn.classList.remove("show");
+        searchbtn.firstChild.nodeValue = "Search"
+        matchedtxt.classList.add("hide");
+        matchedtxt.firstChild.nodeValue = ""
+    }
+}
+function search(term) {
+    var re = new RegExp(term);
+    var el = frames.children;
+    var matches = new Object();
+    var maxwidth = 0;
+    for (var i = 0; i < el.length; i++) {
+        var e = el[i];
+        // Skip over frames which are either not visible, or below the zoomed-to frame
+        if (e.classList.contains("hide") || e.classList.contains("parent")) {
+            continue;
+        }
+        var func = g_to_func(e);
+        var rect = find_child(e, "rect");
+        if (func == null || rect == null)
+            continue;
+        // Save max width. Only works as we have a root frame
+        var w = parseInt(rect.attributes["fg:w"].value);
+        if (w > maxwidth)
+            maxwidth = w;
+        if (func.match(re)) {
+            // highlight
+            var x = parseInt(rect.attributes["fg:x"].value);
+            orig_save(rect, "fill");
+            rect.attributes.fill.value = searchcolor;
+            // remember matches
+            if (matches[x] == undefined) {
+                matches[x] = w;
+            } else {
+                if (w > matches[x]) {
+                    // overwrite with parent
+                    matches[x] = w;
+                }
+            }
+            searching = 1;
+        }
+    }
+    if (!searching)
+        return;
+    var params = get_params();
+    params.s = term;
+    history.replaceState(null, null, parse_params(params));
+
+    searchbtn.classList.add("show");
+    searchbtn.firstChild.nodeValue = "Reset Search";
+    // calculate percent matched, excluding vertical overlap
+    var count = 0;
+    var lastx = -1;
+    var lastw = 0;
+    var keys = Array();
+    for (k in matches) {
+        if (matches.hasOwnProperty(k))
+            keys.push(k);
+    }
+    // sort the matched frames by their x location
+    // ascending, then width descending
+    keys.sort(function(a, b){
+        return a - b;
+    });
+    // Step through frames saving only the biggest bottom-up frames
+    // thanks to the sort order. This relies on the tree property
+    // where children are always smaller than their parents.
+    for (var k in keys) {
+        var x = parseInt(keys[k]);
+        var w = matches[keys[k]];
+        if (x >= lastx + lastw) {
+            count += w;
+            lastx = x;
+            lastw = w;
+        }
+    }
+    // display matched percent
+    matchedtxt.classList.remove("hide");
+    var pct = 100 * count / maxwidth;
+    if (pct != 100) pct = pct.toFixed(1);
+    matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+}
+function format_percent(n) {
+    return n.toFixed(4) + "%";
+}
+]]></script><rect x="0" y="0" width="100%" height="342" fill="url(#background)"/><text id="title" x="50.0000%" y="24.00">Flame Graph</text><text id="details" x="10" y="325.00"> </text><text id="unzoom" class="hide" x="10" y="24.00">Reset Zoom</text><text id="search" x="1190" y="24.00">Search</text><text id="matched" x="1190" y="325.00"> </text><svg id="frames" x="10" width="1180" total_samples="1078"><g><title>example`&lt;jfrs::reader::event::EventIterator&lt;T&gt; as core::iter::traits::iterator::Iterator&gt;::next (5 samples, 0.46%)</title><rect x="0.0000%" y="197" width="0.4638%" height="15" fill="rgb(227,0,7)" fg:x="0" fg:w="5"/><text x="0.2500%" y="207.50"></text></g><g><title>example`DYLD-STUB$$free (1 samples, 0.09%)</title><rect x="0.4638%" y="197" width="0.0928%" height="15" fill="rgb(217,0,24)" fg:x="5" fg:w="1"/><text x="0.7138%" y="207.50"></text></g><g><title>example`&lt;alloc::vec::Vec&lt;T,A&gt; as core::ops::drop::Drop&gt;::drop (8 samples, 0.74%)</title><rect x="2.7829%" y="181" width="0.7421%" height="15" fill="rgb(221,193,54)" fg:x="30" fg:w="8"/><text x="3.0329%" y="191.50"></text></g><g><title>example`core::ptr::drop_in_place&lt;jfrs::reader::value_descriptor::ValueDescriptor&gt; (14 samples, 1.30%)</title><rect x="5.0093%" y="133" width="1.2987%" height="15" fill="rgb(248,212,6)" fg:x="54" fg:w="14"/><text x="5.2593%" y="143.50"></text></g><g><title>libsystem_malloc.dylib`free (26 samples, 2.41%)</title><rect x="6.3080%" y="133" width="2.4119%" height="15" fill="rgb(208,68,35)" fg:x="68" fg:w="26"/><text x="6.5580%" y="143.50">li..</text></g><g><title>libsystem_malloc.dylib`nanov2_pointer_size (18 samples, 1.67%)</title><rect x="7.0501%" y="117" width="1.6698%" height="15" fill="rgb(232,128,0)" fg:x="76" fg:w="18"/><text x="7.3001%" y="127.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_free_to_block (33 samples, 3.06%)</title><rect x="8.7199%" y="133" width="3.0612%" height="15" fill="rgb(207,160,47)" fg:x="94" fg:w="33"/><text x="8.9699%" y="143.50">lib..</text></g><g><title>libsystem_malloc.dylib`nanov2_madvise_block (24 samples, 2.23%)</title><rect x="9.5547%" y="117" width="2.2263%" height="15" fill="rgb(228,23,34)" fg:x="103" fg:w="24"/><text x="9.8047%" y="127.50">l..</text></g><g><title>libsystem_kernel.dylib`madvise (24 samples, 2.23%)</title><rect x="9.5547%" y="101" width="2.2263%" height="15" fill="rgb(218,30,26)" fg:x="103" fg:w="24"/><text x="9.8047%" y="111.50">l..</text></g><g><title>example`&lt;alloc::vec::Vec&lt;T,A&gt; as core::ops::drop::Drop&gt;::drop (85 samples, 7.88%)</title><rect x="3.9889%" y="149" width="7.8850%" height="15" fill="rgb(220,122,19)" fg:x="43" fg:w="85"/><text x="4.2389%" y="159.50">example`&lt;al..</text></g><g><title>libsystem_malloc.dylib`nanov2_size (1 samples, 0.09%)</title><rect x="11.7811%" y="133" width="0.0928%" height="15" fill="rgb(250,228,42)" fg:x="127" fg:w="1"/><text x="12.0311%" y="143.50"></text></g><g><title>example`DYLD-STUB$$free (5 samples, 0.46%)</title><rect x="11.8738%" y="149" width="0.4638%" height="15" fill="rgb(240,193,28)" fg:x="128" fg:w="5"/><text x="12.1238%" y="159.50"></text></g><g><title>example`core::ptr::drop_in_place&lt;jfrs::reader::value_descriptor::ValueDescriptor&gt; (6 samples, 0.56%)</title><rect x="12.3377%" y="149" width="0.5566%" height="15" fill="rgb(216,20,37)" fg:x="133" fg:w="6"/><text x="12.5877%" y="159.50"></text></g><g><title>libsystem_malloc.dylib`free (7 samples, 0.65%)</title><rect x="12.8942%" y="149" width="0.6494%" height="15" fill="rgb(206,188,39)" fg:x="139" fg:w="7"/><text x="13.1442%" y="159.50"></text></g><g><title>libsystem_malloc.dylib`free_small (5 samples, 0.46%)</title><rect x="13.5436%" y="149" width="0.4638%" height="15" fill="rgb(217,207,13)" fg:x="146" fg:w="5"/><text x="13.7936%" y="159.50"></text></g><g><title>libsystem_malloc.dylib`small_madvise_free_range_no_lock (4 samples, 0.37%)</title><rect x="13.6364%" y="133" width="0.3711%" height="15" fill="rgb(231,73,38)" fg:x="147" fg:w="4"/><text x="13.8864%" y="143.50"></text></g><g><title>libsystem_kernel.dylib`madvise (4 samples, 0.37%)</title><rect x="13.6364%" y="117" width="0.3711%" height="15" fill="rgb(225,20,46)" fg:x="147" fg:w="4"/><text x="13.8864%" y="127.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_free_definite_size (2 samples, 0.19%)</title><rect x="14.0074%" y="149" width="0.1855%" height="15" fill="rgb(210,31,41)" fg:x="151" fg:w="2"/><text x="14.2574%" y="159.50"></text></g><g><title>example`&lt;alloc::vec::Vec&lt;T,A&gt; as core::ops::drop::Drop&gt;::drop (115 samples, 10.67%)</title><rect x="3.6178%" y="165" width="10.6679%" height="15" fill="rgb(221,200,47)" fg:x="39" fg:w="115"/><text x="3.8678%" y="175.50">example`&lt;alloc::..</text></g><g><title>libsystem_malloc.dylib`nanov2_free_to_block (1 samples, 0.09%)</title><rect x="14.1929%" y="149" width="0.0928%" height="15" fill="rgb(226,26,5)" fg:x="153" fg:w="1"/><text x="14.4429%" y="159.50"></text></g><g><title>libsystem_malloc.dylib`free (4 samples, 0.37%)</title><rect x="14.2857%" y="165" width="0.3711%" height="15" fill="rgb(249,33,26)" fg:x="154" fg:w="4"/><text x="14.5357%" y="175.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_pointer_size (2 samples, 0.19%)</title><rect x="14.4712%" y="149" width="0.1855%" height="15" fill="rgb(235,183,28)" fg:x="156" fg:w="2"/><text x="14.7212%" y="159.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_free_definite_size (2 samples, 0.19%)</title><rect x="14.6568%" y="165" width="0.1855%" height="15" fill="rgb(221,5,38)" fg:x="158" fg:w="2"/><text x="14.9068%" y="175.50"></text></g><g><title>example`&lt;hashbrown::raw::RawTable&lt;T,A&gt; as core::ops::drop::Drop&gt;::drop (125 samples, 11.60%)</title><rect x="3.5250%" y="181" width="11.5955%" height="15" fill="rgb(247,18,42)" fg:x="38" fg:w="125"/><text x="3.7750%" y="191.50">example`&lt;hashbrow..</text></g><g><title>libsystem_malloc.dylib`nanov2_free_to_block (3 samples, 0.28%)</title><rect x="14.8423%" y="165" width="0.2783%" height="15" fill="rgb(241,131,45)" fg:x="160" fg:w="3"/><text x="15.0923%" y="175.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_madvise_block (3 samples, 0.28%)</title><rect x="14.8423%" y="149" width="0.2783%" height="15" fill="rgb(249,31,29)" fg:x="160" fg:w="3"/><text x="15.0923%" y="159.50"></text></g><g><title>libsystem_kernel.dylib`madvise (3 samples, 0.28%)</title><rect x="14.8423%" y="133" width="0.2783%" height="15" fill="rgb(225,111,53)" fg:x="160" fg:w="3"/><text x="15.0923%" y="143.50"></text></g><g><title>example`alloc::raw_vec::RawVec&lt;T,A&gt;::allocate_in (3 samples, 0.28%)</title><rect x="20.5009%" y="165" width="0.2783%" height="15" fill="rgb(238,160,17)" fg:x="221" fg:w="3"/><text x="20.7509%" y="175.50"></text></g><g><title>example`jfrs::reader::byte_stream::ByteStream&lt;T&gt;::read_i64 (1 samples, 0.09%)</title><rect x="20.7792%" y="165" width="0.0928%" height="15" fill="rgb(214,148,48)" fg:x="224" fg:w="1"/><text x="21.0292%" y="175.50"></text></g><g><title>example`jfrs::reader::byte_stream::ByteStream&lt;T&gt;::read_var_i64 (27 samples, 2.50%)</title><rect x="20.8720%" y="165" width="2.5046%" height="15" fill="rgb(232,36,49)" fg:x="225" fg:w="27"/><text x="21.1220%" y="175.50">ex..</text></g><g><title>example`&lt;core::hash::sip::Hasher&lt;S&gt; as core::hash::Hasher&gt;::write (3 samples, 0.28%)</title><rect x="23.9332%" y="149" width="0.2783%" height="15" fill="rgb(209,103,24)" fg:x="258" fg:w="3"/><text x="24.1832%" y="159.50"></text></g><g><title>example`jfrs::reader::type_descriptor::TypePool::get (16 samples, 1.48%)</title><rect x="23.3766%" y="165" width="1.4842%" height="15" fill="rgb(229,88,8)" fg:x="252" fg:w="16"/><text x="23.6266%" y="175.50"></text></g><g><title>example`core::hash::BuildHasher::hash_one (7 samples, 0.65%)</title><rect x="24.2115%" y="149" width="0.6494%" height="15" fill="rgb(213,181,19)" fg:x="261" fg:w="7"/><text x="24.4615%" y="159.50"></text></g><g><title>example`DYLD-STUB$$malloc (1 samples, 0.09%)</title><rect x="29.7774%" y="149" width="0.0928%" height="15" fill="rgb(254,191,54)" fg:x="321" fg:w="1"/><text x="30.0274%" y="159.50"></text></g><g><title>example`__rdl_alloc (1 samples, 0.09%)</title><rect x="29.8701%" y="149" width="0.0928%" height="15" fill="rgb(241,83,37)" fg:x="322" fg:w="1"/><text x="30.1201%" y="159.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_allocate (1 samples, 0.09%)</title><rect x="30.7050%" y="117" width="0.0928%" height="15" fill="rgb(233,36,39)" fg:x="331" fg:w="1"/><text x="30.9550%" y="127.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_allocate (17 samples, 1.58%)</title><rect x="31.3544%" y="101" width="1.5770%" height="15" fill="rgb(226,3,54)" fg:x="338" fg:w="17"/><text x="31.6044%" y="111.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_allocate_from_block (12 samples, 1.11%)</title><rect x="31.8182%" y="85" width="1.1132%" height="15" fill="rgb(245,192,40)" fg:x="343" fg:w="12"/><text x="32.0682%" y="95.50"></text></g><g><title>libsystem_malloc.dylib`_malloc_zone_malloc (30 samples, 2.78%)</title><rect x="30.2412%" y="133" width="2.7829%" height="15" fill="rgb(238,167,29)" fg:x="326" fg:w="30"/><text x="30.4912%" y="143.50">li..</text></g><g><title>libsystem_malloc.dylib`nanov2_malloc (24 samples, 2.23%)</title><rect x="30.7978%" y="117" width="2.2263%" height="15" fill="rgb(232,182,51)" fg:x="332" fg:w="24"/><text x="31.0478%" y="127.50">l..</text></g><g><title>libsystem_malloc.dylib`nanov2_allocate_from_block (1 samples, 0.09%)</title><rect x="32.9314%" y="101" width="0.0928%" height="15" fill="rgb(231,60,39)" fg:x="355" fg:w="1"/><text x="33.1814%" y="111.50"></text></g><g><title>example`alloc::raw_vec::RawVec&lt;T,A&gt;::allocate_in (35 samples, 3.25%)</title><rect x="29.9629%" y="149" width="3.2468%" height="15" fill="rgb(208,69,12)" fg:x="323" fg:w="35"/><text x="30.2129%" y="159.50">exa..</text></g><g><title>libsystem_malloc.dylib`default_zone_malloc (2 samples, 0.19%)</title><rect x="33.0241%" y="133" width="0.1855%" height="15" fill="rgb(235,93,37)" fg:x="356" fg:w="2"/><text x="33.2741%" y="143.50"></text></g><g><title>example`core::hash::BuildHasher::hash_one (1 samples, 0.09%)</title><rect x="33.2096%" y="149" width="0.0928%" height="15" fill="rgb(213,116,39)" fg:x="358" fg:w="1"/><text x="33.4596%" y="159.50"></text></g><g><title>example`jfrs::reader::byte_stream::ByteStream&lt;T&gt;::read_var_i64 (17 samples, 1.58%)</title><rect x="33.3024%" y="149" width="1.5770%" height="15" fill="rgb(222,207,29)" fg:x="359" fg:w="17"/><text x="33.5524%" y="159.50"></text></g><g><title>example`&lt;core::hash::sip::Hasher&lt;S&gt; as core::hash::Hasher&gt;::write (9 samples, 0.83%)</title><rect x="36.0853%" y="133" width="0.8349%" height="15" fill="rgb(206,96,30)" fg:x="389" fg:w="9"/><text x="36.3353%" y="143.50"></text></g><g><title>example`jfrs::reader::type_descriptor::TypePool::get (32 samples, 2.97%)</title><rect x="34.8794%" y="149" width="2.9685%" height="15" fill="rgb(218,138,4)" fg:x="376" fg:w="32"/><text x="35.1294%" y="159.50">exa..</text></g><g><title>example`core::hash::BuildHasher::hash_one (10 samples, 0.93%)</title><rect x="36.9202%" y="133" width="0.9276%" height="15" fill="rgb(250,191,14)" fg:x="398" fg:w="10"/><text x="37.1702%" y="143.50"></text></g><g><title>example`jfrs::reader::byte_stream::ByteStream&lt;T&gt;::read_string (3 samples, 0.28%)</title><rect x="39.0538%" y="133" width="0.2783%" height="15" fill="rgb(239,60,40)" fg:x="421" fg:w="3"/><text x="39.3038%" y="143.50"></text></g><g><title>example`&lt;core::hash::sip::Hasher&lt;S&gt; as core::hash::Hasher&gt;::write (20 samples, 1.86%)</title><rect x="40.5380%" y="117" width="1.8553%" height="15" fill="rgb(206,27,48)" fg:x="437" fg:w="20"/><text x="40.7880%" y="127.50">e..</text></g><g><title>example`jfrs::reader::value_descriptor::ValueDescriptor::try_new (65 samples, 6.03%)</title><rect x="37.8479%" y="149" width="6.0297%" height="15" fill="rgb(225,35,8)" fg:x="408" fg:w="65"/><text x="38.0979%" y="159.50">example`..</text></g><g><title>example`jfrs::reader::type_descriptor::TypePool::get (49 samples, 4.55%)</title><rect x="39.3321%" y="133" width="4.5455%" height="15" fill="rgb(250,213,24)" fg:x="424" fg:w="49"/><text x="39.5821%" y="143.50">examp..</text></g><g><title>example`core::hash::BuildHasher::hash_one (16 samples, 1.48%)</title><rect x="42.3933%" y="117" width="1.4842%" height="15" fill="rgb(247,123,22)" fg:x="457" fg:w="16"/><text x="42.6433%" y="127.50"></text></g><g><title>example`&lt;jfrs::reader::event::EventIterator&lt;T&gt; as core::iter::traits::iterator::Iterator&gt;::next (312 samples, 28.94%)</title><rect x="15.1206%" y="181" width="28.9425%" height="15" fill="rgb(231,138,38)" fg:x="163" fg:w="312"/><text x="15.3706%" y="191.50">example`&lt;jfrs::reader::event::EventIterator&lt;T&gt; ..</text></g><g><title>example`jfrs::reader::value_descriptor::ValueDescriptor::try_new (207 samples, 19.20%)</title><rect x="24.8609%" y="165" width="19.2022%" height="15" fill="rgb(231,145,46)" fg:x="268" fg:w="207"/><text x="25.1109%" y="175.50">example`jfrs::reader::value_de..</text></g><g><title>libsystem_malloc.dylib`_malloc_zone_malloc (2 samples, 0.19%)</title><rect x="43.8776%" y="149" width="0.1855%" height="15" fill="rgb(251,118,11)" fg:x="473" fg:w="2"/><text x="44.1276%" y="159.50"></text></g><g><title>example`&lt;std::io::buffered::bufreader::BufReader&lt;R&gt; as std::io::Read&gt;::read_to_end (11 samples, 1.02%)</title><rect x="44.0631%" y="181" width="1.0204%" height="15" fill="rgb(217,147,25)" fg:x="475" fg:w="11"/><text x="44.3131%" y="191.50"></text></g><g><title>libsystem_kernel.dylib`read (11 samples, 1.02%)</title><rect x="44.0631%" y="165" width="1.0204%" height="15" fill="rgb(247,81,37)" fg:x="475" fg:w="11"/><text x="44.3131%" y="175.50"></text></g><g><title>example`DYLD-STUB$$free (2 samples, 0.19%)</title><rect x="45.0835%" y="181" width="0.1855%" height="15" fill="rgb(209,12,38)" fg:x="486" fg:w="2"/><text x="45.3335%" y="191.50"></text></g><g><title>example`DYLD-STUB$$memcmp (1 samples, 0.09%)</title><rect x="45.2690%" y="181" width="0.0928%" height="15" fill="rgb(227,1,9)" fg:x="488" fg:w="1"/><text x="45.5190%" y="191.50"></text></g><g><title>example`core::hash::BuildHasher::hash_one (12 samples, 1.11%)</title><rect x="45.3618%" y="181" width="1.1132%" height="15" fill="rgb(248,47,43)" fg:x="489" fg:w="12"/><text x="45.6118%" y="191.50"></text></g><g><title>example`jfrs::reader::ChunkHeader::chunk_body_size (1 samples, 0.09%)</title><rect x="46.4750%" y="181" width="0.0928%" height="15" fill="rgb(221,10,30)" fg:x="501" fg:w="1"/><text x="46.7250%" y="191.50"></text></g><g><title>example`jfrs::reader::byte_stream::ByteStream&lt;T&gt;::read_var_i64 (1 samples, 0.09%)</title><rect x="46.5677%" y="165" width="0.0928%" height="15" fill="rgb(210,229,1)" fg:x="502" fg:w="1"/><text x="46.8177%" y="175.50"></text></g><g><title>example`hashbrown::map::HashMap&lt;K,V,S,A&gt;::insert (1 samples, 0.09%)</title><rect x="46.8460%" y="149" width="0.0928%" height="15" fill="rgb(222,148,37)" fg:x="505" fg:w="1"/><text x="47.0960%" y="159.50"></text></g><g><title>example`jfrs::reader::byte_stream::ByteStream&lt;T&gt;::read_var_i64 (3 samples, 0.28%)</title><rect x="46.9388%" y="149" width="0.2783%" height="15" fill="rgb(234,67,33)" fg:x="506" fg:w="3"/><text x="47.1888%" y="159.50"></text></g><g><title>example`&lt;core::hash::sip::Hasher&lt;S&gt; as core::hash::Hasher&gt;::write (1 samples, 0.09%)</title><rect x="47.4026%" y="133" width="0.0928%" height="15" fill="rgb(247,98,35)" fg:x="511" fg:w="1"/><text x="47.6526%" y="143.50"></text></g><g><title>example`core::hash::BuildHasher::hash_one (2 samples, 0.19%)</title><rect x="47.4954%" y="133" width="0.1855%" height="15" fill="rgb(247,138,52)" fg:x="512" fg:w="2"/><text x="47.7454%" y="143.50"></text></g><g><title>example`core::hash::BuildHasher::hash_one (1 samples, 0.09%)</title><rect x="48.0519%" y="117" width="0.0928%" height="15" fill="rgb(213,79,30)" fg:x="518" fg:w="1"/><text x="48.3019%" y="127.50"></text></g><g><title>example`&lt;core::hash::sip::Hasher&lt;S&gt; as core::hash::Hasher&gt;::write (3 samples, 0.28%)</title><rect x="48.8868%" y="85" width="0.2783%" height="15" fill="rgb(246,177,23)" fg:x="527" fg:w="3"/><text x="49.1368%" y="95.50"></text></g><g><title>example`jfrs::reader::constant_pool::ConstantPool::register (23 samples, 2.13%)</title><rect x="47.2171%" y="149" width="2.1336%" height="15" fill="rgb(230,62,27)" fg:x="509" fg:w="23"/><text x="47.4671%" y="159.50">e..</text></g><g><title>example`hashbrown::map::HashMap&lt;K,V,S,A&gt;::insert (18 samples, 1.67%)</title><rect x="47.6809%" y="133" width="1.6698%" height="15" fill="rgb(216,154,8)" fg:x="514" fg:w="18"/><text x="47.9309%" y="143.50"></text></g><g><title>example`hashbrown::raw::RawTable&lt;T,A&gt;::insert (13 samples, 1.21%)</title><rect x="48.1447%" y="117" width="1.2059%" height="15" fill="rgb(244,35,45)" fg:x="519" fg:w="13"/><text x="48.3947%" y="127.50"></text></g><g><title>example`hashbrown::raw::RawTable&lt;T,A&gt;::reserve_rehash (11 samples, 1.02%)</title><rect x="48.3302%" y="101" width="1.0204%" height="15" fill="rgb(251,115,12)" fg:x="521" fg:w="11"/><text x="48.5802%" y="111.50"></text></g><g><title>example`core::hash::BuildHasher::hash_one (2 samples, 0.19%)</title><rect x="49.1651%" y="85" width="0.1855%" height="15" fill="rgb(240,54,50)" fg:x="530" fg:w="2"/><text x="49.4151%" y="95.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_allocate (1 samples, 0.09%)</title><rect x="51.5770%" y="101" width="0.0928%" height="15" fill="rgb(233,84,52)" fg:x="556" fg:w="1"/><text x="51.8270%" y="111.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_malloc (3 samples, 0.28%)</title><rect x="51.6698%" y="101" width="0.2783%" height="15" fill="rgb(207,117,47)" fg:x="557" fg:w="3"/><text x="51.9198%" y="111.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_allocate (2 samples, 0.19%)</title><rect x="51.7625%" y="85" width="0.1855%" height="15" fill="rgb(249,43,39)" fg:x="558" fg:w="2"/><text x="52.0125%" y="95.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_find_block_and_allocate (1 samples, 0.09%)</title><rect x="51.8553%" y="69" width="0.0928%" height="15" fill="rgb(209,38,44)" fg:x="559" fg:w="1"/><text x="52.1053%" y="79.50"></text></g><g><title>example`alloc::raw_vec::RawVec&lt;T,A&gt;::allocate_in (8 samples, 0.74%)</title><rect x="51.4842%" y="133" width="0.7421%" height="15" fill="rgb(236,212,23)" fg:x="555" fg:w="8"/><text x="51.7342%" y="143.50"></text></g><g><title>libsystem_malloc.dylib`_malloc_zone_malloc (8 samples, 0.74%)</title><rect x="51.4842%" y="117" width="0.7421%" height="15" fill="rgb(242,79,21)" fg:x="555" fg:w="8"/><text x="51.7342%" y="127.50"></text></g><g><title>libsystem_malloc.dylib`szone_malloc_should_clear (3 samples, 0.28%)</title><rect x="51.9481%" y="101" width="0.2783%" height="15" fill="rgb(211,96,35)" fg:x="560" fg:w="3"/><text x="52.1981%" y="111.50"></text></g><g><title>libsystem_malloc.dylib`small_malloc_should_clear (3 samples, 0.28%)</title><rect x="51.9481%" y="85" width="0.2783%" height="15" fill="rgb(253,215,40)" fg:x="560" fg:w="3"/><text x="52.1981%" y="95.50"></text></g><g><title>libsystem_malloc.dylib`small_malloc_from_free_list (3 samples, 0.28%)</title><rect x="51.9481%" y="69" width="0.2783%" height="15" fill="rgb(211,81,21)" fg:x="560" fg:w="3"/><text x="52.1981%" y="79.50"></text></g><g><title>libsystem_malloc.dylib`small_free_list_add_ptr (2 samples, 0.19%)</title><rect x="52.0408%" y="53" width="0.1855%" height="15" fill="rgb(208,190,38)" fg:x="561" fg:w="2"/><text x="52.2908%" y="63.50"></text></g><g><title>example`jfrs::reader::byte_stream::ByteStream&lt;T&gt;::read_i64 (1 samples, 0.09%)</title><rect x="52.2263%" y="133" width="0.0928%" height="15" fill="rgb(235,213,38)" fg:x="563" fg:w="1"/><text x="52.4763%" y="143.50"></text></g><g><title>example`jfrs::reader::byte_stream::ByteStream&lt;T&gt;::read_string (1 samples, 0.09%)</title><rect x="52.3191%" y="133" width="0.0928%" height="15" fill="rgb(237,122,38)" fg:x="564" fg:w="1"/><text x="52.5691%" y="143.50"></text></g><g><title>example`jfrs::reader::byte_stream::ByteStream&lt;T&gt;::read_var_i64 (10 samples, 0.93%)</title><rect x="52.4119%" y="133" width="0.9276%" height="15" fill="rgb(244,218,35)" fg:x="565" fg:w="10"/><text x="52.6619%" y="143.50"></text></g><g><title>example`jfrs::reader::type_descriptor::TypePool::get (5 samples, 0.46%)</title><rect x="53.3395%" y="133" width="0.4638%" height="15" fill="rgb(240,68,47)" fg:x="575" fg:w="5"/><text x="53.5895%" y="143.50"></text></g><g><title>example`core::hash::BuildHasher::hash_one (2 samples, 0.19%)</title><rect x="53.6178%" y="117" width="0.1855%" height="15" fill="rgb(210,16,53)" fg:x="578" fg:w="2"/><text x="53.8678%" y="127.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_allocate (2 samples, 0.19%)</title><rect x="58.1633%" y="85" width="0.1855%" height="15" fill="rgb(235,124,12)" fg:x="627" fg:w="2"/><text x="58.4133%" y="95.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_allocate_from_block (25 samples, 2.32%)</title><rect x="61.3173%" y="53" width="2.3191%" height="15" fill="rgb(224,169,11)" fg:x="661" fg:w="25"/><text x="61.5673%" y="63.50">l..</text></g><g><title>libsystem_malloc.dylib`nanov2_allocate (59 samples, 5.47%)</title><rect x="58.8126%" y="69" width="5.4731%" height="15" fill="rgb(250,166,2)" fg:x="634" fg:w="59"/><text x="59.0626%" y="79.50">libsyst..</text></g><g><title>libsystem_malloc.dylib`nanov2_find_block_and_allocate (7 samples, 0.65%)</title><rect x="63.6364%" y="53" width="0.6494%" height="15" fill="rgb(242,216,29)" fg:x="686" fg:w="7"/><text x="63.8864%" y="63.50"></text></g><g><title>libsystem_malloc.dylib`_malloc_zone_malloc (72 samples, 6.68%)</title><rect x="57.6994%" y="101" width="6.6790%" height="15" fill="rgb(230,116,27)" fg:x="622" fg:w="72"/><text x="57.9494%" y="111.50">libsystem..</text></g><g><title>libsystem_malloc.dylib`nanov2_malloc (65 samples, 6.03%)</title><rect x="58.3488%" y="85" width="6.0297%" height="15" fill="rgb(228,99,48)" fg:x="629" fg:w="65"/><text x="58.5988%" y="95.50">libsyste..</text></g><g><title>libsystem_malloc.dylib`nanov2_allocate_from_block (1 samples, 0.09%)</title><rect x="64.2857%" y="69" width="0.0928%" height="15" fill="rgb(253,11,6)" fg:x="693" fg:w="1"/><text x="64.5357%" y="79.50"></text></g><g><title>example`alloc::raw_vec::RawVec&lt;T,A&gt;::allocate_in (79 samples, 7.33%)</title><rect x="57.5139%" y="117" width="7.3284%" height="15" fill="rgb(247,143,39)" fg:x="620" fg:w="79"/><text x="57.7639%" y="127.50">example`al..</text></g><g><title>libsystem_malloc.dylib`default_zone_malloc (5 samples, 0.46%)</title><rect x="64.3785%" y="101" width="0.4638%" height="15" fill="rgb(236,97,10)" fg:x="694" fg:w="5"/><text x="64.6285%" y="111.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_malloc (1 samples, 0.09%)</title><rect x="66.7904%" y="69" width="0.0928%" height="15" fill="rgb(233,208,19)" fg:x="720" fg:w="1"/><text x="67.0404%" y="79.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_allocate (1 samples, 0.09%)</title><rect x="66.7904%" y="53" width="0.0928%" height="15" fill="rgb(216,164,2)" fg:x="720" fg:w="1"/><text x="67.0404%" y="63.50"></text></g><g><title>example`jfrs::reader::byte_stream::ByteStream&lt;T&gt;::read_string (23 samples, 2.13%)</title><rect x="64.8423%" y="117" width="2.1336%" height="15" fill="rgb(220,129,5)" fg:x="699" fg:w="23"/><text x="65.0923%" y="127.50">e..</text></g><g><title>example`alloc::raw_vec::RawVec&lt;T,A&gt;::allocate_in (4 samples, 0.37%)</title><rect x="66.6048%" y="101" width="0.3711%" height="15" fill="rgb(242,17,10)" fg:x="718" fg:w="4"/><text x="66.8548%" y="111.50"></text></g><g><title>libsystem_malloc.dylib`_malloc_zone_malloc (3 samples, 0.28%)</title><rect x="66.6976%" y="85" width="0.2783%" height="15" fill="rgb(242,107,0)" fg:x="719" fg:w="3"/><text x="66.9476%" y="95.50"></text></g><g><title>libsystem_malloc.dylib`szone_malloc_should_clear (1 samples, 0.09%)</title><rect x="66.8831%" y="69" width="0.0928%" height="15" fill="rgb(251,28,31)" fg:x="721" fg:w="1"/><text x="67.1331%" y="79.50"></text></g><g><title>libsystem_malloc.dylib`tiny_malloc_should_clear (1 samples, 0.09%)</title><rect x="66.8831%" y="53" width="0.0928%" height="15" fill="rgb(233,223,10)" fg:x="721" fg:w="1"/><text x="67.1331%" y="63.50"></text></g><g><title>libsystem_malloc.dylib`set_tiny_meta_header_in_use (1 samples, 0.09%)</title><rect x="66.8831%" y="37" width="0.0928%" height="15" fill="rgb(215,21,27)" fg:x="721" fg:w="1"/><text x="67.1331%" y="47.50"></text></g><g><title>example`jfrs::reader::byte_stream::ByteStream&lt;T&gt;::read_var_i64 (14 samples, 1.30%)</title><rect x="66.9759%" y="117" width="1.2987%" height="15" fill="rgb(232,23,21)" fg:x="722" fg:w="14"/><text x="67.2259%" y="127.50"></text></g><g><title>example`&lt;core::hash::sip::Hasher&lt;S&gt; as core::hash::Hasher&gt;::write (16 samples, 1.48%)</title><rect x="68.9239%" y="101" width="1.4842%" height="15" fill="rgb(244,5,23)" fg:x="743" fg:w="16"/><text x="69.1739%" y="111.50"></text></g><g><title>example`jfrs::reader::type_descriptor::TypePool::get (37 samples, 3.43%)</title><rect x="68.2746%" y="117" width="3.4323%" height="15" fill="rgb(226,81,46)" fg:x="736" fg:w="37"/><text x="68.5246%" y="127.50">exa..</text></g><g><title>example`core::hash::BuildHasher::hash_one (14 samples, 1.30%)</title><rect x="70.4082%" y="101" width="1.2987%" height="15" fill="rgb(247,70,30)" fg:x="759" fg:w="14"/><text x="70.6582%" y="111.50"></text></g><g><title>example`&lt;core::hash::sip::Hasher&lt;S&gt; as core::hash::Hasher&gt;::write (23 samples, 2.13%)</title><rect x="73.5622%" y="85" width="2.1336%" height="15" fill="rgb(212,68,19)" fg:x="793" fg:w="23"/><text x="73.8122%" y="95.50">e..</text></g><g><title>example`jfrs::reader::value_descriptor::ValueDescriptor::try_new (63 samples, 5.84%)</title><rect x="71.7069%" y="117" width="5.8442%" height="15" fill="rgb(240,187,13)" fg:x="773" fg:w="63"/><text x="71.9569%" y="127.50">example..</text></g><g><title>example`jfrs::reader::type_descriptor::TypePool::get (52 samples, 4.82%)</title><rect x="72.7273%" y="101" width="4.8237%" height="15" fill="rgb(223,113,26)" fg:x="784" fg:w="52"/><text x="72.9773%" y="111.50">exampl..</text></g><g><title>example`core::hash::BuildHasher::hash_one (20 samples, 1.86%)</title><rect x="75.6957%" y="85" width="1.8553%" height="15" fill="rgb(206,192,2)" fg:x="816" fg:w="20"/><text x="75.9457%" y="95.50">e..</text></g><g><title>example`jfrs::reader::value_descriptor::ValueDescriptor::try_new (259 samples, 24.03%)</title><rect x="53.8033%" y="133" width="24.0260%" height="15" fill="rgb(241,108,4)" fg:x="580" fg:w="259"/><text x="54.0533%" y="143.50">example`jfrs::reader::value_descriptor..</text></g><g><title>libsystem_malloc.dylib`_malloc_zone_malloc (3 samples, 0.28%)</title><rect x="77.5510%" y="117" width="0.2783%" height="15" fill="rgb(247,173,49)" fg:x="836" fg:w="3"/><text x="77.8010%" y="127.50"></text></g><g><title>example`jfrs::reader::constant_pool::ConstantPool::try_new (337 samples, 31.26%)</title><rect x="46.6605%" y="165" width="31.2616%" height="15" fill="rgb(224,114,35)" fg:x="503" fg:w="337"/><text x="46.9105%" y="175.50">example`jfrs::reader::constant_pool::ConstantPool:..</text></g><g><title>example`jfrs::reader::value_descriptor::ValueDescriptor::try_new (308 samples, 28.57%)</title><rect x="49.3506%" y="149" width="28.5714%" height="15" fill="rgb(245,159,27)" fg:x="532" fg:w="308"/><text x="49.6006%" y="159.50">example`jfrs::reader::value_descriptor::ValueD..</text></g><g><title>libsystem_malloc.dylib`_malloc_zone_malloc (1 samples, 0.09%)</title><rect x="77.8293%" y="133" width="0.0928%" height="15" fill="rgb(245,172,44)" fg:x="839" fg:w="1"/><text x="78.0793%" y="143.50"></text></g><g><title>example`jfrs::reader::JfrReader&lt;T&gt;::next (339 samples, 31.45%)</title><rect x="46.5677%" y="181" width="31.4471%" height="15" fill="rgb(236,23,11)" fg:x="502" fg:w="339"/><text x="46.8177%" y="191.50">example`jfrs::reader::JfrReader&lt;T&gt;::next</text></g><g><title>example`jfrs::reader::metadata::Metadata::try_new (1 samples, 0.09%)</title><rect x="77.9221%" y="165" width="0.0928%" height="15" fill="rgb(205,117,38)" fg:x="840" fg:w="1"/><text x="78.1721%" y="175.50"></text></g><g><title>example`jfrs::reader::type_descriptor::StringTable::try_new (1 samples, 0.09%)</title><rect x="77.9221%" y="149" width="0.0928%" height="15" fill="rgb(237,72,25)" fg:x="840" fg:w="1"/><text x="78.1721%" y="159.50"></text></g><g><title>example`jfrs::reader::byte_stream::ByteStream&lt;T&gt;::read_string (1 samples, 0.09%)</title><rect x="77.9221%" y="133" width="0.0928%" height="15" fill="rgb(244,70,9)" fg:x="840" fg:w="1"/><text x="78.1721%" y="143.50"></text></g><g><title>example`core::str::converts::from_utf8 (1 samples, 0.09%)</title><rect x="77.9221%" y="117" width="0.0928%" height="15" fill="rgb(217,125,39)" fg:x="840" fg:w="1"/><text x="78.1721%" y="127.50"></text></g><g><title>example`jfrs::reader::byte_stream::ByteStream&lt;T&gt;::read_var_i64 (5 samples, 0.46%)</title><rect x="78.0148%" y="181" width="0.4638%" height="15" fill="rgb(235,36,10)" fg:x="841" fg:w="5"/><text x="78.2648%" y="191.50"></text></g><g><title>example`jfrs::reader::constant_pool::ConstantPool::get (5 samples, 0.46%)</title><rect x="78.4787%" y="181" width="0.4638%" height="15" fill="rgb(251,123,47)" fg:x="846" fg:w="5"/><text x="78.7287%" y="191.50"></text></g><g><title>example`jfrs::reader::type_descriptor::TypePool::get (1 samples, 0.09%)</title><rect x="78.9425%" y="181" width="0.0928%" height="15" fill="rgb(221,13,13)" fg:x="851" fg:w="1"/><text x="79.1925%" y="191.50"></text></g><g><title>example`&lt;core::hash::sip::Hasher&lt;S&gt; as core::hash::Hasher&gt;::write (28 samples, 2.60%)</title><rect x="81.9109%" y="165" width="2.5974%" height="15" fill="rgb(238,131,9)" fg:x="883" fg:w="28"/><text x="82.1609%" y="175.50">ex..</text></g><g><title>example`core::hash::BuildHasher::hash_one (22 samples, 2.04%)</title><rect x="84.5083%" y="165" width="2.0408%" height="15" fill="rgb(211,50,8)" fg:x="911" fg:w="22"/><text x="84.7583%" y="175.50">e..</text></g><g><title>example`&lt;core::hash::sip::Hasher&lt;S&gt; as core::hash::Hasher&gt;::write (20 samples, 1.86%)</title><rect x="88.5900%" y="149" width="1.8553%" height="15" fill="rgb(245,182,24)" fg:x="955" fg:w="20"/><text x="88.8400%" y="159.50">e..</text></g><g><title>example`jfrs::reader::value_descriptor::ValueDescriptor::get_field (149 samples, 13.82%)</title><rect x="79.0353%" y="181" width="13.8219%" height="15" fill="rgb(242,14,37)" fg:x="852" fg:w="149"/><text x="79.2853%" y="191.50">example`jfrs::reader:..</text></g><g><title>example`jfrs::reader::constant_pool::ConstantPool::get (68 samples, 6.31%)</title><rect x="86.5492%" y="165" width="6.3080%" height="15" fill="rgb(246,228,12)" fg:x="933" fg:w="68"/><text x="86.7992%" y="175.50">example`..</text></g><g><title>example`core::hash::BuildHasher::hash_one (26 samples, 2.41%)</title><rect x="90.4453%" y="149" width="2.4119%" height="15" fill="rgb(213,55,15)" fg:x="975" fg:w="26"/><text x="90.6953%" y="159.50">ex..</text></g><g><title>example`jfrs::reader::value_descriptor::ValueDescriptor::try_new (5 samples, 0.46%)</title><rect x="92.8571%" y="181" width="0.4638%" height="15" fill="rgb(209,9,3)" fg:x="1001" fg:w="5"/><text x="93.1071%" y="191.50"></text></g><g><title>libsystem_malloc.dylib`free (10 samples, 0.93%)</title><rect x="93.3210%" y="181" width="0.9276%" height="15" fill="rgb(230,59,30)" fg:x="1006" fg:w="10"/><text x="93.5710%" y="191.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_pointer_size (2 samples, 0.19%)</title><rect x="94.0631%" y="165" width="0.1855%" height="15" fill="rgb(209,121,21)" fg:x="1014" fg:w="2"/><text x="94.3131%" y="175.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_free_definite_size (1 samples, 0.09%)</title><rect x="94.2486%" y="181" width="0.0928%" height="15" fill="rgb(220,109,13)" fg:x="1016" fg:w="1"/><text x="94.4986%" y="191.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_free_to_block (10 samples, 0.93%)</title><rect x="94.3414%" y="181" width="0.9276%" height="15" fill="rgb(232,18,1)" fg:x="1017" fg:w="10"/><text x="94.5914%" y="191.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_size (1 samples, 0.09%)</title><rect x="95.2690%" y="181" width="0.0928%" height="15" fill="rgb(215,41,42)" fg:x="1027" fg:w="1"/><text x="95.5190%" y="191.50"></text></g><g><title>example`example::main (1,052 samples, 97.59%)</title><rect x="0.5566%" y="197" width="97.5881%" height="15" fill="rgb(224,123,36)" fg:x="6" fg:w="1052"/><text x="0.8066%" y="207.50">example`example::main</text></g><g><title>libsystem_platform.dylib`_platform_memcmp (30 samples, 2.78%)</title><rect x="95.3618%" y="181" width="2.7829%" height="15" fill="rgb(240,125,3)" fg:x="1028" fg:w="30"/><text x="95.6118%" y="191.50">li..</text></g><g><title>example`jfrs::reader::value_descriptor::ValueDescriptor::get_field (8 samples, 0.74%)</title><rect x="98.1447%" y="197" width="0.7421%" height="15" fill="rgb(205,98,50)" fg:x="1058" fg:w="8"/><text x="98.3947%" y="207.50"></text></g><g><title>libsystem_malloc.dylib`default_zone_free_definite_size (1 samples, 0.09%)</title><rect x="98.8868%" y="197" width="0.0928%" height="15" fill="rgb(205,185,37)" fg:x="1066" fg:w="1"/><text x="99.1368%" y="207.50"></text></g><g><title>libsystem_malloc.dylib`free (3 samples, 0.28%)</title><rect x="98.9796%" y="197" width="0.2783%" height="15" fill="rgb(238,207,15)" fg:x="1067" fg:w="3"/><text x="99.2296%" y="207.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_free_definite_size (4 samples, 0.37%)</title><rect x="99.2579%" y="197" width="0.3711%" height="15" fill="rgb(213,199,42)" fg:x="1070" fg:w="4"/><text x="99.5079%" y="207.50"></text></g><g><title>dyld`start (1,076 samples, 99.81%)</title><rect x="0.0000%" y="277" width="99.8145%" height="15" fill="rgb(235,201,11)" fg:x="0" fg:w="1076"/><text x="0.2500%" y="287.50">dyld`start</text></g><g><title>example`main (1,076 samples, 99.81%)</title><rect x="0.0000%" y="261" width="99.8145%" height="15" fill="rgb(207,46,11)" fg:x="0" fg:w="1076"/><text x="0.2500%" y="271.50">example`main</text></g><g><title>example`std::rt::lang_start_internal (1,076 samples, 99.81%)</title><rect x="0.0000%" y="245" width="99.8145%" height="15" fill="rgb(241,35,35)" fg:x="0" fg:w="1076"/><text x="0.2500%" y="255.50">example`std::rt::lang_start_internal</text></g><g><title>example`std::rt::lang_start::_{{closure}} (1,076 samples, 99.81%)</title><rect x="0.0000%" y="229" width="99.8145%" height="15" fill="rgb(243,32,47)" fg:x="0" fg:w="1076"/><text x="0.2500%" y="239.50">example`std::rt::lang_start::_{{closure}}</text></g><g><title>example`std::sys_common::backtrace::__rust_begin_short_backtrace (1,076 samples, 99.81%)</title><rect x="0.0000%" y="213" width="99.8145%" height="15" fill="rgb(247,202,23)" fg:x="0" fg:w="1076"/><text x="0.2500%" y="223.50">example`std::sys_common::backtrace::__rust_begin_short_backtrace</text></g><g><title>libsystem_malloc.dylib`nanov2_free_to_block (2 samples, 0.19%)</title><rect x="99.6289%" y="197" width="0.1855%" height="15" fill="rgb(219,102,11)" fg:x="1074" fg:w="2"/><text x="99.8789%" y="207.50"></text></g><g><title>all (1,078 samples, 100%)</title><rect x="0.0000%" y="293" width="100.0000%" height="15" fill="rgb(243,110,44)" fg:x="0" fg:w="1078"/><text x="0.2500%" y="303.50"></text></g><g><title>libsystem_kernel.dylib`__exit (2 samples, 0.19%)</title><rect x="99.8145%" y="277" width="0.1855%" height="15" fill="rgb(222,74,54)" fg:x="1076" fg:w="2"/><text x="100.0645%" y="287.50"></text></g></svg></svg>
