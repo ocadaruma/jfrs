@@ -159,3 +159,49 @@ pub enum Primitive {
     NullString,
     String(String),
 }
+
+#[macro_use]
+mod macros {
+    macro_rules! impl_try_from_primitive {
+        ($variant:ident, $ty:ty) => {
+            impl<'a> TryFrom<&'a ValueDescriptor> for &'a $ty {
+                type Error = ();
+                fn try_from(value: &'a ValueDescriptor) -> std::result::Result<Self, Self::Error> {
+                    if let ValueDescriptor::Primitive(Primitive::$variant(v)) = value {
+                        Ok(v)
+                    } else {
+                        Err(())
+                    }
+                }
+            }
+
+            impl<'a> TryFrom<&'a ValueDescriptor> for $ty {
+                type Error = ();
+                fn try_from(value: &'a ValueDescriptor) -> std::result::Result<Self, Self::Error> {
+                    <&$ty>::try_from(value).map(|v| *v)
+                }
+            }
+        };
+    }
+}
+
+impl_try_from_primitive!(Integer, i32);
+impl_try_from_primitive!(Long, i64);
+impl_try_from_primitive!(Float, f32);
+impl_try_from_primitive!(Double, f64);
+impl_try_from_primitive!(Character, char);
+impl_try_from_primitive!(Boolean, bool);
+impl_try_from_primitive!(Short, i16);
+impl_try_from_primitive!(Byte, i8);
+
+impl<'a> TryFrom<&'a ValueDescriptor> for &'a str {
+    type Error = ();
+
+    fn try_from(value: &'a ValueDescriptor) -> std::result::Result<Self, Self::Error> {
+        if let ValueDescriptor::Primitive(Primitive::String(s)) = value {
+            Ok(s.as_str())
+        } else {
+            Err(())
+        }
+    }
+}

@@ -18,13 +18,10 @@ fn main() {
             .flatten()
             .filter(|e| e.class.name.as_ref() == "jdk.ExecutionSample")
         {
-            let thread_name = event.value
-                .get_field("sampledThread", &chunk)
-                .and_then(|f| f.get_field("osName", &chunk))
-                .and_then(|v| match v {
-                    ValueDescriptor::Primitive(Primitive::String(s)) => Some(s),
-                    _ => None,
-                })
+            let thread_name = event.value()
+                .get_field("sampledThread")
+                .and_then(|v| v.get_field("osName"))
+                .and_then(|v| <&str>::try_from(v.value).ok())
                 .unwrap();
             println!("sampled thread: {}", thread_name);
         }
@@ -51,7 +48,7 @@ fn main() {
             .flatten()
             .filter(|e| e.class.name.as_ref() == "jdk.ExecutionSample")
         {
-            let sample: ExecutionSample = from_event(&chunk, &event).unwrap();
+            let sample: ExecutionSample = from_event(&event).unwrap();
             println!("sampled thread: {}", sample.sampled_thread.and_then(|t| t.os_name).unwrap());
         }
     }

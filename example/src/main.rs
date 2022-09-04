@@ -1,5 +1,3 @@
-use jfrs::reader::value_descriptor::Primitive;
-use jfrs::reader::value_descriptor::ValueDescriptor;
 use jfrs::reader::JfrReader;
 use std::env;
 use std::fs::File;
@@ -25,19 +23,16 @@ fn main() {
                 .flatten()
                 .filter(|e| e.class.name.as_ref() == "jdk.ExecutionSample")
             {
-                // let sample: ExecutionSample = from_event(&chunk, &event).unwrap();
-                event_count += 1;
+                // let sample: ExecutionSample = from_event(&event).unwrap();
                 // os_name_total_length += sample.sampled_thread.unwrap().os_name.unwrap().len();
-                match event
-                    .value
-                    .get_field("sampledThread", &chunk)
-                    .and_then(|t| t.get_field("osName", &chunk))
-                {
-                    Some(ValueDescriptor::Primitive(Primitive::String(s))) => {
-                        os_name_total_length += s.len();
-                    }
-                    _ => {}
-                }
+
+                let thread_name = event.value()
+                    .get_field("sampledThread")
+                    .and_then(|v| v.get_field("osName"))
+                    .and_then(|v| <&str>::try_from(v.value).ok()).unwrap();
+                os_name_total_length += thread_name.len();
+
+                event_count += 1;
             }
         }
         println!(

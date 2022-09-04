@@ -26,11 +26,11 @@ impl serde::de::Error for Error {
     }
 }
 
-pub fn from_event<'a, T>(chunk: &'a Chunk, event: &'a Event) -> crate::reader::Result<T>
+pub fn from_event<'a, T>(event: &'a Event) -> crate::reader::Result<T>
 where
     T: serde::de::Deserialize<'a>,
 {
-    T::deserialize(Deserializer::new(chunk, &event.value))
+    T::deserialize(Deserializer::new(event.chunk, &event.value))
 }
 
 struct ObjectDeserializer<'de> {

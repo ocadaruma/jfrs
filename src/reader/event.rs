@@ -3,10 +3,33 @@ use crate::reader::value_descriptor::ValueDescriptor;
 use crate::reader::{Chunk, Error, HeapByteStream, Result};
 use crate::{EVENT_TYPE_CONSTANT_POOL, EVENT_TYPE_METADATA};
 
-#[derive(Debug)]
 pub struct Event<'a> {
     pub class: &'a TypeDescriptor,
-    pub value: ValueDescriptor,
+    pub(crate) chunk: &'a Chunk,
+    pub(crate) value: ValueDescriptor,
+}
+
+impl<'a> Event<'a> {
+    pub fn value(&'a self) -> Accessor<'a> {
+        Accessor {
+            chunk: self.chunk,
+            value: &self.value,
+        }
+    }
+}
+
+pub struct Accessor<'a> {
+    chunk: &'a Chunk,
+    pub value: &'a ValueDescriptor,
+}
+
+impl<'a> Accessor<'a> {
+    pub fn get_field(self, name: &str) -> Option<Self> {
+        self.value.get_field(name, self.chunk).map(|v| Self {
+            chunk: self.chunk,
+            value: v,
+        })
+    }
 }
 
 pub struct EventIterator<'a> {
@@ -52,6 +75,7 @@ impl<'a> EventIterator<'a> {
 
                     return Ok(Some(Event {
                         class: type_desc,
+                        chunk: self.chunk,
                         value,
                     }));
                 }
