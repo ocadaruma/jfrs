@@ -80,4 +80,22 @@ target/release/example ~/develop/playground/jfr/test.jfr 10 > /dev/null  1.00s u
   * ![](./img/flamegraph-004.svg)
 - Can we improve further? Try arena-allocator or something?
 
+## 5. Change hashing algorithm
+commit: 45e56ad
+
+Besides the allocation overhead, we can see that calculating hash consumes notable amount of time.
+
+It's known that Rust's default hash algorithm is SipHash, which is robust against Hash DoS but it's not quite fast.
+
+Obviously we don't have to care about DoS attack here so we can try more fast hash algorithm (https://github.com/rust-lang/rustc-hash) 
+
+```
+% time target/release/example ~/develop/playground/jfr/test.jfr 10 > /dev/null
+target/release/example ~/develop/playground/jfr/test.jfr 10 > /dev/null  0.57s user 0.09s system 99% cpu 0.663 total
+```
+
+- Finally it outperformed Java
+- Seems the allocation overhead is now more significant
+  * ![](./img/flamegraph-005.svg)
+
 TO BE CONTINUED
