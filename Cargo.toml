@@ -2,6 +2,14 @@
 name = "jfrs"
 version = "0.1.0"
 edition = "2021"
+authors = ["Haruki Okada <ocadaruma@gmail.com>"]
+
+description   = "Java Flight Recorder reader for Rust"
+repository    = "https://github.com/ocadaruma/jfrs"
+keywords      = ["java", "jfr", "file-format"]
+license       = "Apache-2.0"
+readme        = "./README.md"
+categories    = ["parser-implementations"]
 
 [dependencies]
 serde = { version = "1.0.144", features = ["derive"] }
