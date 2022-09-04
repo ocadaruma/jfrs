@@ -5,17 +5,17 @@ use crate::reader::value_descriptor::ValueDescriptor;
 use crate::reader::Error;
 use crate::reader::{ChunkHeader, Result};
 use crate::EVENT_TYPE_CONSTANT_POOL;
-use std::collections::HashMap;
 use std::io::{Read, Seek};
+use rustc_hash::FxHashMap;
 
 #[derive(Debug, Default)]
 pub struct PerTypePool {
-    pub(crate) inner: HashMap<i64, ValueDescriptor>,
+    pub(crate) inner: FxHashMap<i64, ValueDescriptor>,
 }
 
 #[derive(Debug, Default)]
 pub struct ConstantPool {
-    pub(crate) inner: HashMap<i64, PerTypePool>,
+    pub(crate) inner: FxHashMap<i64, PerTypePool>,
 }
 
 impl ConstantPool {

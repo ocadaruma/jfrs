@@ -4,10 +4,10 @@
 
 use crate::reader::byte_stream::{ByteStream, StringType};
 use crate::reader::{Error, Result};
-use std::collections::HashMap;
 use std::io::Read;
 
 use std::rc::Rc;
+use rustc_hash::FxHashMap;
 
 /// String intern pool
 #[derive(Debug)]
@@ -40,7 +40,7 @@ impl StringTable {
 
 #[derive(Debug, Default)]
 pub struct TypePool {
-    pub(crate) inner: HashMap<i64, TypeDescriptor>,
+    pub(crate) inner: FxHashMap<i64, TypeDescriptor>,
 }
 
 impl TypePool {
