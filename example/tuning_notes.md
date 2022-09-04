@@ -22,7 +22,7 @@ java Example ~/develop/playground/jfr/test.jfr 10 > /dev/null  2.47s user 0.18s 
 ```
 
 ## 1. Initial
-commit: 9c698e8
+[code](https://github.com/ocadaruma/jfrs/tree/9c698e8)
 
 ```
 % time target/release/example ~/develop/playground/jfr/test.jfr 10 > /dev/null
@@ -36,7 +36,7 @@ target/release/example ~/develop/playground/jfr/test.jfr 10 > /dev/null  26.29s 
   * So we should pre-deserialize for known types in constant pool
 
 ## 2. Changed to direct ValueDescriptor access
-commit: 89d6b05
+[code](https://github.com/ocadaruma/jfrs/tree/89d6b05)
 
 To implement pre-deserialization, many parts should be re-written.
 Let's continue with changing to direct ValueDescriptor access for now, to see the max performance.
@@ -52,8 +52,8 @@ target/release/example ~/develop/playground/jfr/test.jfr 10 > /dev/null  1.83s u
 - Maybe better to read whole bytes as byte array for each chunk?
   * This is what JDK's RecordingInput is doing: [RecordingInput.java](https://github.com/adoptium/jdk11u/blob/jdk-11.0.15%2B10/src/jdk.jfr/share/classes/jdk/jfr/internal/consumer/RecordingInput.java#L56)
 
-## 3. Read full bytes in advance
-commit: bcf447d
+## 3. Read full bytes in advance 
+[code](https://github.com/ocadaruma/jfrs/tree/bcf447d)
 
 For now, let's continue with just reading all file bytes and create `Read` by `Cursor`.
 
@@ -67,8 +67,8 @@ target/release/example ~/develop/playground/jfr/test.jfr 10 > /dev/null  1.20s u
   * ![](./img/flamegraph-003.svg)
 - I found that there are some places that creating vector without specifying capacity, though the size is known at the creation time.
 
-## 4. Specify vector capacity to avoid resizing
-commit: cf6f4c2
+## 4. Specify vector capacity to avoid resizing 
+[code](https://github.com/ocadaruma/jfrs/tree/cf6f4c2)
 
 ```
 % time target/release/example ~/develop/playground/jfr/test.jfr 10 > /dev/null
@@ -81,7 +81,7 @@ target/release/example ~/develop/playground/jfr/test.jfr 10 > /dev/null  1.00s u
 - Can we improve further? Try arena-allocator or something?
 
 ## 5. Change hashing algorithm
-commit: 45e56ad
+[code](https://github.com/ocadaruma/jfrs/tree/45e56ad)
 
 Besides the allocation overhead, we can see that calculating hash consumes notable amount of time.
 
