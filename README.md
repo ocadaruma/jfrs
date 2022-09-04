@@ -1,6 +1,7 @@
 # jfrs
 
 [![CI](https://github.com/ocadaruma/jfrs/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/ocadaruma/jfrs/actions/workflows/ci.yml)
+[![Crate](https://img.shields.io/crates/v/jfrs.svg)](https://crates.io/crates/jfrs)
 
 Java Flight Recorder reader for Rust
 
