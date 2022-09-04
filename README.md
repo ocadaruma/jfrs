@@ -34,7 +34,7 @@ fn main() {
 
 ### \[Experimental\] Deserialize events as Rust struct
 
-> **NOTE**
+> **Note**
 > As of now, deserialization performance is very poor. See [tuning_notes.md](./example/tuning_notes.md) for the details.
 
 Though low-level API provides full functionality to interpret the events as you need,
