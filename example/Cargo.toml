@@ -5,3 +5,10 @@ edition = "2021"
 
 [dependencies]
 jfrs = { path = "../" }
+dhat = "0.3.0"
+
+[profile.release]
+debug = 1
+
+[features]
+dhat-heap = []
