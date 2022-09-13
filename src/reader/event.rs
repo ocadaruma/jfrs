@@ -24,11 +24,33 @@ pub struct Accessor<'a> {
 }
 
 impl<'a> Accessor<'a> {
-    pub fn get_field(self, name: &str) -> Option<Self> {
+    pub fn new(chunk: &'a Chunk, value: &'a ValueDescriptor) -> Self {
+        Self { chunk, value }
+    }
+
+    pub fn get_field(&self, name: &str) -> Option<Self> {
         self.value.get_field(name, self.chunk).map(|v| Self {
             chunk: self.chunk,
             value: v,
         })
+    }
+
+    pub fn as_iter(self) -> Option<impl Iterator<Item = Accessor<'a>>> {
+        let array = match self.value {
+            ValueDescriptor::Array(a) => a,
+            ValueDescriptor::ConstantPool {
+                class_id,
+                constant_index,
+            } => match self.chunk.constant_pool.get(class_id, constant_index) {
+                Some(ValueDescriptor::Array(a)) => a,
+                _ => return None,
+            },
+            _ => return None,
+        };
+        Some(array.iter().map(|v| Accessor {
+            value: v,
+            chunk: self.chunk,
+        }))
     }
 }
 

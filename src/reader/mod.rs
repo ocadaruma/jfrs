@@ -12,7 +12,7 @@ use std::{fmt, io};
 mod byte_stream;
 mod constant_pool;
 mod de;
-mod event;
+pub mod event;
 mod metadata;
 mod type_descriptor;
 pub mod types;
