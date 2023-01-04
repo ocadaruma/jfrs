@@ -69,14 +69,22 @@ impl ValueDescriptor {
     fn get_object_field<'a>(
         obj: &'a Object,
         name: &str,
-        chunk: &Chunk,
+        chunk: &'a Chunk,
     ) -> Option<&'a ValueDescriptor> {
-        chunk
+        let res = chunk
             .metadata
             .type_pool
             .get(obj.class_id)
             .and_then(|c| c.get_field(name))
-            .and_then(|(idx, _)| obj.fields.get(idx))
+            .and_then(|(idx, _)| obj.fields.get(idx));
+
+        match res {
+            Some(ValueDescriptor::ConstantPool {
+                class_id,
+                constant_index,
+            }) => chunk.constant_pool.get(class_id, constant_index) ,
+            _ => res
+        }
     }
 
     fn try_read_field_single<T: Read>(
