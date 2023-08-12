@@ -51,6 +51,10 @@ impl TypePool {
     pub fn get(&self, class_id: i64) -> Option<&TypeDescriptor> {
         self.inner.get(&class_id)
     }
+
+    pub fn get_types(&self) -> impl Iterator<Item = &TypeDescriptor> {
+        self.inner.values()
+    }
 }
 
 #[derive(Debug)]

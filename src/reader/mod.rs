@@ -86,7 +86,7 @@ impl ChunkHeader {
 
 pub struct Chunk {
     pub header: ChunkHeader,
-    metadata: Metadata,
+    pub metadata: Metadata,
     constant_pool: ConstantPool,
 }
 
