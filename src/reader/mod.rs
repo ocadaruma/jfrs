@@ -13,8 +13,8 @@ mod byte_stream;
 mod constant_pool;
 mod de;
 pub mod event;
-mod metadata;
-mod type_descriptor;
+pub mod metadata;
+pub mod type_descriptor;
 pub mod types;
 pub mod value_descriptor;
 
