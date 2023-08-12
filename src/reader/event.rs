@@ -38,7 +38,13 @@ impl<'a> Accessor<'a> {
                     .chunk
                     .constant_pool
                     .get(class_id, constant_index)
-                    .expect("invalid constant pool entry"),
+                    .expect(
+                        format!(
+                            "invalid constant pool entry: {} {}",
+                            class_id, constant_index
+                        )
+                        .as_str(),
+                    ),
                 chunk: self.chunk,
             },
             value => Accessor {
