@@ -28,29 +28,23 @@ impl<'a> Accessor<'a> {
         Self { chunk, value }
     }
 
-    pub fn get_resolved(&self) -> Self {
+    pub fn get_resolved(&self) -> Option<Self> {
         match self.value {
             ValueDescriptor::ConstantPool {
                 class_id,
                 constant_index,
-            } => Accessor {
-                value: self
-                    .chunk
-                    .constant_pool
-                    .get(class_id, constant_index)
-                    .expect(
-                        format!(
-                            "invalid constant pool entry: {} {}",
-                            class_id, constant_index
-                        )
-                        .as_str(),
-                    ),
-                chunk: self.chunk,
-            },
-            value => Accessor {
+            } => self
+                .chunk
+                .constant_pool
+                .get(class_id, constant_index)
+                .map(|v| Self {
+                    value: v,
+                    chunk: self.chunk,
+                }),
+            value => Some(Accessor {
                 value,
                 chunk: self.chunk,
-            },
+            }),
         }
     }
 
