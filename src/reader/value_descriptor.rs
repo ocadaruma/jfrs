@@ -82,8 +82,8 @@ impl ValueDescriptor {
             Some(ValueDescriptor::ConstantPool {
                 class_id,
                 constant_index,
-            }) => chunk.constant_pool.get(class_id, constant_index) ,
-            _ => res
+            }) => chunk.constant_pool.get(class_id, constant_index),
+            _ => res,
         }
     }
 
