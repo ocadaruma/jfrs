@@ -4,6 +4,7 @@ use crate::reader::{Chunk, Error, HeapByteStream, Result};
 use crate::{EVENT_TYPE_CONSTANT_POOL, EVENT_TYPE_METADATA};
 
 pub struct Event<'a> {
+    pub byte_offset: u64,
     pub class: &'a TypeDescriptor,
     pub(crate) chunk: &'a Chunk,
     pub(crate) value: ValueDescriptor,
@@ -89,12 +90,17 @@ impl<'a> EventIterator<'a> {
         }
     }
 
+    pub fn seek(&mut self, offset: u64) {
+        self.offset = offset;
+    }
+
     fn internal_next(&mut self) -> Result<Option<Event<'a>>> {
         let end_offset = self.chunk.header.chunk_body_size();
 
         while self.offset < end_offset {
             self.stream
                 .seek(self.chunk.header.body_start_offset() + self.offset)?;
+            let event_offset = self.offset;
 
             let size = self.stream.read_i32()?;
             let event_type = self.stream.read_i64()?;
@@ -116,6 +122,7 @@ impl<'a> EventIterator<'a> {
                     )?;
 
                     return Ok(Some(Event {
+                        byte_offset: event_offset,
                         class: type_desc,
                         chunk: self.chunk,
                         value,

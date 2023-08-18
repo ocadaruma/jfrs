@@ -98,6 +98,12 @@ impl ChunkReader {
     pub fn events(self, chunk: &Chunk) -> EventIterator<'_> {
         EventIterator::new(chunk, self.stream)
     }
+
+    pub fn events_from(self, chunk: &Chunk, start_offset: u64) -> EventIterator<'_> {
+        let mut iter = EventIterator::new(chunk, self.stream);
+        iter.seek(start_offset);
+        iter
+    }
 }
 
 pub struct ChunkIterator<'a, T> {
