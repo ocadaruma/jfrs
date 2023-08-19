@@ -95,12 +95,16 @@ pub struct ChunkReader {
 }
 
 impl ChunkReader {
-    pub fn events(self, chunk: &Chunk) -> EventIterator<'_> {
-        EventIterator::new(chunk, self.stream)
+    pub fn events<'a, 'b>(&'b mut self, chunk: &'a Chunk) -> EventIterator<'a, 'b> {
+        EventIterator::new(chunk, &mut self.stream)
     }
 
-    pub fn events_from(self, chunk: &Chunk, start_offset: u64) -> EventIterator<'_> {
-        let mut iter = EventIterator::new(chunk, self.stream);
+    pub fn events_from<'a, 'b>(
+        &'b mut self,
+        chunk: &'a Chunk,
+        start_offset: u64,
+    ) -> EventIterator<'a, 'b> {
+        let mut iter = EventIterator::new(chunk, &mut self.stream);
         iter.seek(start_offset);
         iter
     }
@@ -244,7 +248,7 @@ mod tests {
         let mut chunk_count = 0;
         for res in reader.chunks() {
             let res = res.unwrap();
-            let (reader, chunk) = res;
+            let (mut reader, chunk) = res;
             chunk_count += 1;
 
             // You can see these values on JMC
@@ -307,7 +311,7 @@ mod tests {
         let mut reader = JfrReader::new(File::open(path).unwrap());
 
         let mut chunk_count = 0;
-        for (reader, chunk) in reader.chunks().flatten() {
+        for (mut reader, chunk) in reader.chunks().flatten() {
             chunk_count += 1;
             for event in reader
                 .events(&chunk)
