@@ -10,7 +10,7 @@ use std::io::{Cursor, Read, Seek};
 use std::{fmt, io};
 
 mod byte_stream;
-mod constant_pool;
+pub mod constant_pool;
 mod de;
 pub mod event;
 pub mod metadata;
@@ -87,7 +87,7 @@ impl ChunkHeader {
 pub struct Chunk {
     pub header: ChunkHeader,
     pub metadata: Metadata,
-    constant_pool: ConstantPool,
+    pub constant_pool: ConstantPool,
 }
 
 pub struct ChunkReader {
@@ -233,6 +233,7 @@ pub use de::from_event;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
     use std::fs::File;
 
     use crate::reader::types::jdk::ExecutionSample;
@@ -252,10 +253,27 @@ mod tests {
             chunk_count += 1;
 
             // You can see these values on JMC
-            assert_eq!(chunk.constant_pool.inner.len(), 9);
+            assert_eq!(
+                chunk
+                    .constant_pool
+                    .inner
+                    .keys()
+                    .map(|k| k.class_id)
+                    .collect::<HashSet<i64>>()
+                    .len(),
+                9
+            );
 
             // class_id:30 = jdk.types.Symbol
-            assert_eq!(128, chunk.constant_pool.inner.get(&30).unwrap().inner.len());
+            assert_eq!(
+                128,
+                chunk
+                    .constant_pool
+                    .inner
+                    .keys()
+                    .filter(|k| k.class_id == 30)
+                    .count()
+            );
 
             // constant_index: 203 for jdk.types.Symbol
             let field = chunk
@@ -298,7 +316,15 @@ mod tests {
         let mut chunk_count = 0;
         for (_reader, chunk) in reader.chunks().flatten() {
             // class_id:20 = java.lang.Class
-            assert_eq!(52, chunk.constant_pool.inner.get(&20).unwrap().inner.len());
+            assert_eq!(
+                52,
+                chunk
+                    .constant_pool
+                    .inner
+                    .keys()
+                    .filter(|k| k.class_id == 20)
+                    .count()
+            );
             chunk_count += 1;
         }
 

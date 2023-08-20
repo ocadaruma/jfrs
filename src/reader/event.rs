@@ -115,11 +115,8 @@ impl<'a, 'b> EventIterator<'a, 'b> {
                         .type_pool
                         .get(event_type)
                         .ok_or(Error::ClassNotFound(event_type))?;
-                    let value = ValueDescriptor::try_new(
-                        self.stream,
-                        event_type,
-                        &self.chunk.metadata,
-                    )?;
+                    let value =
+                        ValueDescriptor::try_new(self.stream, event_type, &self.chunk.metadata)?;
 
                     return Ok(Some(Event {
                         byte_offset: event_offset,
