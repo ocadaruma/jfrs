@@ -131,7 +131,7 @@ impl FieldDescriptor {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum Unit {
     Byte,
     PercentUnity,
@@ -145,7 +145,7 @@ pub enum Unit {
     EpochSecond,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum TickUnit {
     Timespan,
     Timestamp,
