@@ -37,10 +37,6 @@ impl ConstantPool {
         Ok(constant_pool)
     }
 
-    pub fn get_entries(&self) -> impl Iterator<Item = (&ConstantPoolKey, &ValueDescriptor)> {
-        self.inner.iter()
-    }
-
     pub fn register(&mut self, class_id: i64, constant_index: i64, value: ValueDescriptor) {
         self.inner.insert(
             ConstantPoolKey {

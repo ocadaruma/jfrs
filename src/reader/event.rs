@@ -29,26 +29,6 @@ impl<'a> Accessor<'a> {
         Self { chunk, value }
     }
 
-    pub fn get_resolved(&self) -> Option<Self> {
-        match self.value {
-            ValueDescriptor::ConstantPool {
-                class_id,
-                constant_index,
-            } => self
-                .chunk
-                .constant_pool
-                .get(class_id, constant_index)
-                .map(|v| Self {
-                    value: v,
-                    chunk: self.chunk,
-                }),
-            value => Some(Accessor {
-                value,
-                chunk: self.chunk,
-            }),
-        }
-    }
-
     pub fn get_field(&self, name: &str) -> Option<Self> {
         self.value.get_field(name, self.chunk).map(|v| Self {
             chunk: self.chunk,

@@ -53,13 +53,32 @@ impl ValueDescriptor {
     }
 
     pub fn get_field<'a>(&'a self, name: &str, chunk: &'a Chunk) -> Option<&'a ValueDescriptor> {
+        self.inner_get_field(name, chunk, true)
+    }
+
+    pub fn get_field_raw<'a>(
+        &'a self,
+        name: &str,
+        chunk: &'a Chunk,
+    ) -> Option<&'a ValueDescriptor> {
+        self.inner_get_field(name, chunk, false)
+    }
+
+    fn inner_get_field<'a>(
+        &'a self,
+        name: &str,
+        chunk: &'a Chunk,
+        resolve_constant: bool,
+    ) -> Option<&'a ValueDescriptor> {
         match self {
-            ValueDescriptor::Object(o) => Self::get_object_field(o, name, chunk),
+            ValueDescriptor::Object(o) => Self::get_object_field(o, name, chunk, resolve_constant),
             ValueDescriptor::ConstantPool {
                 class_id,
                 constant_index,
             } => match chunk.constant_pool.get(class_id, constant_index) {
-                Some(ValueDescriptor::Object(o)) => Self::get_object_field(o, name, chunk),
+                Some(ValueDescriptor::Object(o)) => {
+                    Self::get_object_field(o, name, chunk, resolve_constant)
+                }
                 _ => None,
             },
             _ => None,
@@ -70,6 +89,7 @@ impl ValueDescriptor {
         obj: &'a Object,
         name: &str,
         chunk: &'a Chunk,
+        resolve_constant: bool,
     ) -> Option<&'a ValueDescriptor> {
         let res = chunk
             .metadata
@@ -77,6 +97,9 @@ impl ValueDescriptor {
             .get(obj.class_id)
             .and_then(|c| c.get_field(name))
             .and_then(|(idx, _)| obj.fields.get(idx));
+        if !resolve_constant {
+            return res;
+        }
 
         match res {
             Some(ValueDescriptor::ConstantPool {

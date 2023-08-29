@@ -10,7 +10,7 @@ use std::io::{Cursor, Read, Seek};
 use std::{fmt, io};
 
 mod byte_stream;
-pub mod constant_pool;
+mod constant_pool;
 mod de;
 pub mod event;
 pub mod metadata;
@@ -87,7 +87,7 @@ impl ChunkHeader {
 pub struct Chunk {
     pub header: ChunkHeader,
     pub metadata: Metadata,
-    pub constant_pool: ConstantPool,
+    constant_pool: ConstantPool,
 }
 
 pub struct ChunkReader {
@@ -99,7 +99,7 @@ impl ChunkReader {
         EventIterator::new(chunk, &mut self.stream)
     }
 
-    pub fn events_from<'a, 'b>(
+    pub fn events_from_offset<'a, 'b>(
         &'b mut self,
         chunk: &'a Chunk,
         start_offset: u64,
