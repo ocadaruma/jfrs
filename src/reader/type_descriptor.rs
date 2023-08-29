@@ -51,6 +51,10 @@ impl TypePool {
     pub fn get(&self, class_id: i64) -> Option<&TypeDescriptor> {
         self.inner.get(&class_id)
     }
+
+    pub fn get_types(&self) -> impl Iterator<Item = &TypeDescriptor> {
+        self.inner.values()
+    }
 }
 
 #[derive(Debug)]
@@ -127,7 +131,7 @@ impl FieldDescriptor {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum Unit {
     Byte,
     PercentUnity,
@@ -141,7 +145,7 @@ pub enum Unit {
     EpochSecond,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum TickUnit {
     Timespan,
     Timestamp,

@@ -13,8 +13,8 @@ mod byte_stream;
 mod constant_pool;
 mod de;
 pub mod event;
-mod metadata;
-mod type_descriptor;
+pub mod metadata;
+pub mod type_descriptor;
 pub mod types;
 pub mod value_descriptor;
 
@@ -86,7 +86,7 @@ impl ChunkHeader {
 
 pub struct Chunk {
     pub header: ChunkHeader,
-    metadata: Metadata,
+    pub metadata: Metadata,
     constant_pool: ConstantPool,
 }
 
@@ -95,8 +95,18 @@ pub struct ChunkReader {
 }
 
 impl ChunkReader {
-    pub fn events(self, chunk: &Chunk) -> EventIterator<'_> {
-        EventIterator::new(chunk, self.stream)
+    pub fn events<'a, 'b>(&'b mut self, chunk: &'a Chunk) -> EventIterator<'a, 'b> {
+        EventIterator::new(chunk, &mut self.stream)
+    }
+
+    pub fn events_from_offset<'a, 'b>(
+        &'b mut self,
+        chunk: &'a Chunk,
+        start_offset: u64,
+    ) -> EventIterator<'a, 'b> {
+        let mut iter = EventIterator::new(chunk, &mut self.stream);
+        iter.seek(start_offset);
+        iter
     }
 }
 
@@ -223,6 +233,7 @@ pub use de::from_event;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
     use std::fs::File;
 
     use crate::reader::types::jdk::ExecutionSample;
@@ -238,14 +249,31 @@ mod tests {
         let mut chunk_count = 0;
         for res in reader.chunks() {
             let res = res.unwrap();
-            let (reader, chunk) = res;
+            let (mut reader, chunk) = res;
             chunk_count += 1;
 
             // You can see these values on JMC
-            assert_eq!(chunk.constant_pool.inner.len(), 9);
+            assert_eq!(
+                chunk
+                    .constant_pool
+                    .inner
+                    .keys()
+                    .map(|k| k.class_id)
+                    .collect::<HashSet<i64>>()
+                    .len(),
+                9
+            );
 
             // class_id:30 = jdk.types.Symbol
-            assert_eq!(128, chunk.constant_pool.inner.get(&30).unwrap().inner.len());
+            assert_eq!(
+                128,
+                chunk
+                    .constant_pool
+                    .inner
+                    .keys()
+                    .filter(|k| k.class_id == 30)
+                    .count()
+            );
 
             // constant_index: 203 for jdk.types.Symbol
             let field = chunk
@@ -288,7 +316,15 @@ mod tests {
         let mut chunk_count = 0;
         for (_reader, chunk) in reader.chunks().flatten() {
             // class_id:20 = java.lang.Class
-            assert_eq!(52, chunk.constant_pool.inner.get(&20).unwrap().inner.len());
+            assert_eq!(
+                52,
+                chunk
+                    .constant_pool
+                    .inner
+                    .keys()
+                    .filter(|k| k.class_id == 20)
+                    .count()
+            );
             chunk_count += 1;
         }
 
@@ -301,7 +337,7 @@ mod tests {
         let mut reader = JfrReader::new(File::open(path).unwrap());
 
         let mut chunk_count = 0;
-        for (reader, chunk) in reader.chunks().flatten() {
+        for (mut reader, chunk) in reader.chunks().flatten() {
             chunk_count += 1;
             for event in reader
                 .events(&chunk)

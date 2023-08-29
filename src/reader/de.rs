@@ -119,7 +119,12 @@ impl<'de> serde::Deserializer<'de> for Deserializer<'de> {
             Primitive(Boolean(v)) => visitor.visit_bool(*v),
             Primitive(Short(v)) => visitor.visit_i16(*v),
             Primitive(Byte(v)) => visitor.visit_i8(*v),
-            Primitive(String(v)) => visitor.visit_borrowed_str(v.as_str()),
+            Primitive(String(v)) => {
+                #[cfg(feature = "cstring")]
+                return visitor.visit_borrowed_str(v.as_c_str().to_str().expect("Invalid UTF-8"));
+                #[cfg(not(feature = "cstring"))]
+                return visitor.visit_borrowed_str(v.as_str());
+            }
             Primitive(NullString) => Err(Error::DeserializeError(
                 "Unexpected null string".to_string(),
             )),
