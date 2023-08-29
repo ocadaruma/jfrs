@@ -2,6 +2,8 @@
 
 use crate::reader::byte_stream::{ByteStream, StringType};
 use crate::reader::metadata::Metadata;
+#[allow(unused_imports)]
+use std::ffi::CString;
 
 use crate::reader::type_descriptor::{FieldDescriptor, TypeDescriptor};
 use crate::reader::{Chunk, Error, Result};
@@ -157,9 +159,17 @@ impl ValueDescriptor {
             "java.lang.String" => match stream.read_string()? {
                 StringType::Null => Some(ValueDescriptor::Primitive(Primitive::NullString)),
                 StringType::Empty => Some(ValueDescriptor::Primitive(Primitive::String(
+                    #[cfg(feature = "cstring")]
+                    CString::new("").expect("Failed to create CString"),
+                    #[cfg(not(feature = "cstring"))]
                     "".to_string(),
                 ))),
-                StringType::Raw(s) => Some(ValueDescriptor::Primitive(Primitive::String(s))),
+                StringType::Raw(s) => Some(ValueDescriptor::Primitive(Primitive::String(
+                    #[cfg(feature = "cstring")]
+                    CString::new(s).expect("Failed to create CString"),
+                    #[cfg(not(feature = "cstring"))]
+                    s,
+                ))),
                 StringType::ConstantPool(idx) => Some(ValueDescriptor::ConstantPool {
                     class_id: type_desc.class_id,
                     constant_index: idx,
@@ -188,6 +198,9 @@ pub enum Primitive {
     Short(i16),
     Byte(i8),
     NullString,
+    #[cfg(feature = "cstring")]
+    String(CString),
+    #[cfg(not(feature = "cstring"))]
     String(String),
 }
 
@@ -230,7 +243,10 @@ impl<'a> TryFrom<&'a ValueDescriptor> for &'a str {
 
     fn try_from(value: &'a ValueDescriptor) -> std::result::Result<Self, Self::Error> {
         if let ValueDescriptor::Primitive(Primitive::String(s)) = value {
-            Ok(s.as_str())
+            #[cfg(feature = "cstring")]
+            return s.as_c_str().to_str().map_err(|_| ());
+            #[cfg(not(feature = "cstring"))]
+            return Ok(s.as_str());
         } else {
             Err(())
         }

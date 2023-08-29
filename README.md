@@ -43,7 +43,7 @@ usually we want to map known JFR events to the Rust structure.
 fn main() {
     let mut reader = JfrReader::new(File::open("/path/to/recording.jfr").unwrap());
 
-    for (reader, chunk) in reader.chunks().flatten() {
+    for (mut reader, chunk) in reader.chunks().flatten() {
         for event in reader.events(&chunk)
             .flatten()
             .filter(|e| e.class.name() == "jdk.ExecutionSample")
