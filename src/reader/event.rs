@@ -36,6 +36,22 @@ impl<'a> Accessor<'a> {
         })
     }
 
+    pub fn resolve(self) -> Option<Self> {
+        match self.value {
+            ValueDescriptor::ConstantPool {
+                class_id,
+                constant_index,
+            } => match self.chunk.constant_pool.get(class_id, constant_index) {
+                Some(v) => Some(Self {
+                    chunk: self.chunk,
+                    value: v,
+                }),
+                _ => None,
+            },
+            _ => Some(self),
+        }
+    }
+
     pub fn as_iter(self) -> Option<impl Iterator<Item = Accessor<'a>>> {
         let array = match self.value {
             ValueDescriptor::Array(a) => a,
