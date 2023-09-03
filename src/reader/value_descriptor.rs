@@ -2,8 +2,6 @@
 
 use crate::reader::byte_stream::{ByteStream, StringType};
 use crate::reader::metadata::Metadata;
-#[allow(unused_imports)]
-use std::ffi::CString;
 
 use crate::reader::type_descriptor::{FieldDescriptor, TypeDescriptor};
 use crate::reader::{Chunk, Error, Result};
@@ -144,9 +142,19 @@ impl ValueDescriptor {
             "double" => Some(ValueDescriptor::Primitive(Primitive::Double(
                 stream.read_f64()?,
             ))),
-            "char" => Some(ValueDescriptor::Primitive(Primitive::Character(
-                stream.read_char()?,
-            ))),
+            "char" => {
+                let c = stream.read_char()?;
+                Some(ValueDescriptor::Primitive(Primitive::Character(
+                    #[cfg(feature = "cstring")]
+                    CString {
+                        string: std::ffi::CString::new(c.to_string())
+                            .expect("Failed to create CString"),
+                        len: 1,
+                    },
+                    #[cfg(not(feature = "cstring"))]
+                    c,
+                )))
+            }
             "boolean" => Some(ValueDescriptor::Primitive(Primitive::Boolean(
                 stream.read_i8()? != 0,
             ))),
@@ -158,18 +166,24 @@ impl ValueDescriptor {
             ))),
             "java.lang.String" => match stream.read_string()? {
                 StringType::Null => Some(ValueDescriptor::Primitive(Primitive::NullString)),
-                StringType::Empty => Some(ValueDescriptor::Primitive(Primitive::String(
-                    #[cfg(feature = "cstring")]
-                    CString::new("").expect("Failed to create CString"),
-                    #[cfg(not(feature = "cstring"))]
-                    "".to_string(),
-                ))),
-                StringType::Raw(s) => Some(ValueDescriptor::Primitive(Primitive::String(
-                    #[cfg(feature = "cstring")]
-                    CString::new(s).expect("Failed to create CString"),
-                    #[cfg(not(feature = "cstring"))]
-                    s,
-                ))),
+                s @ (StringType::Empty | StringType::Raw(_)) => {
+                    let s = if let StringType::Raw(s) = s {
+                        s
+                    } else {
+                        "".to_string()
+                    };
+                    #[allow(unused_variables)]
+                    let len = s.len();
+                    Some(ValueDescriptor::Primitive(Primitive::String(
+                        #[cfg(feature = "cstring")]
+                        CString {
+                            string: std::ffi::CString::new(s).expect("Failed to create CString"),
+                            len,
+                        },
+                        #[cfg(not(feature = "cstring"))]
+                        s,
+                    )))
+                }
                 StringType::ConstantPool(idx) => Some(ValueDescriptor::ConstantPool {
                     class_id: type_desc.class_id,
                     constant_index: idx,
@@ -187,12 +201,24 @@ pub struct Object {
     pub fields: Vec<ValueDescriptor>,
 }
 
+#[cfg(feature = "cstring")]
+#[derive(Debug)]
+pub struct CString {
+    pub string: std::ffi::CString,
+    pub len: usize,
+}
+
 #[derive(Debug)]
 pub enum Primitive {
     Integer(i32),
     Long(i64),
     Float(f32),
     Double(f64),
+    // Rust's char can't be mapped to C in natural way
+    // so we just encode it as string
+    #[cfg(feature = "cstring")]
+    Character(CString),
+    #[cfg(not(feature = "cstring"))]
     Character(char),
     Boolean(bool),
     Short(i16),
@@ -233,6 +259,7 @@ impl_try_from_primitive!(Integer, i32);
 impl_try_from_primitive!(Long, i64);
 impl_try_from_primitive!(Float, f32);
 impl_try_from_primitive!(Double, f64);
+#[cfg(not(feature = "cstring"))]
 impl_try_from_primitive!(Character, char);
 impl_try_from_primitive!(Boolean, bool);
 impl_try_from_primitive!(Short, i16);
@@ -244,7 +271,7 @@ impl<'a> TryFrom<&'a ValueDescriptor> for &'a str {
     fn try_from(value: &'a ValueDescriptor) -> std::result::Result<Self, Self::Error> {
         if let ValueDescriptor::Primitive(Primitive::String(s)) = value {
             #[cfg(feature = "cstring")]
-            return s.as_c_str().to_str().map_err(|_| ());
+            return s.string.as_c_str().to_str().map_err(|_| ());
             #[cfg(not(feature = "cstring"))]
             return Ok(s.as_str());
         } else {

@@ -282,6 +282,12 @@ mod tests {
                 .and_then(|c| c.get_field("string", &chunk))
                 .unwrap();
             if let ValueDescriptor::Primitive(Primitive::String(s)) = field {
+                #[cfg(feature = "cstring")]
+                assert_eq!(
+                    s.string.to_str().unwrap(),
+                    "CompileBroker::compiler_thread_loop"
+                );
+                #[cfg(not(feature = "cstring"))]
                 assert_eq!(s, "CompileBroker::compiler_thread_loop");
             } else {
                 panic!("Unexpected value type: {:?}", field);

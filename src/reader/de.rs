@@ -115,13 +115,20 @@ impl<'de> serde::Deserializer<'de> for Deserializer<'de> {
             Primitive(Long(v)) => visitor.visit_i64(*v),
             Primitive(Float(v)) => visitor.visit_f32(*v),
             Primitive(Double(v)) => visitor.visit_f64(*v),
-            Primitive(Character(v)) => visitor.visit_char(*v),
+            Primitive(Character(v)) => {
+                #[cfg(feature = "cstring")]
+                return visitor
+                    .visit_borrowed_str(v.string.as_c_str().to_str().expect("Invalid UTF-8"));
+                #[cfg(not(feature = "cstring"))]
+                return visitor.visit_char(*v);
+            }
             Primitive(Boolean(v)) => visitor.visit_bool(*v),
             Primitive(Short(v)) => visitor.visit_i16(*v),
             Primitive(Byte(v)) => visitor.visit_i8(*v),
             Primitive(String(v)) => {
                 #[cfg(feature = "cstring")]
-                return visitor.visit_borrowed_str(v.as_c_str().to_str().expect("Invalid UTF-8"));
+                return visitor
+                    .visit_borrowed_str(v.string.as_c_str().to_str().expect("Invalid UTF-8"));
                 #[cfg(not(feature = "cstring"))]
                 return visitor.visit_borrowed_str(v.as_str());
             }
