@@ -41,13 +41,14 @@ impl<'a> Accessor<'a> {
             ValueDescriptor::ConstantPool {
                 class_id,
                 constant_index,
-            } => match self.chunk.constant_pool.get(class_id, constant_index) {
-                Some(v) => Some(Self {
+            } => self
+                .chunk
+                .constant_pool
+                .get(class_id, constant_index)
+                .map(|v| Self {
                     chunk: self.chunk,
                     value: v,
                 }),
-                _ => None,
-            },
             _ => Some(self),
         }
     }
