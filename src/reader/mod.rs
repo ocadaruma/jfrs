@@ -4,7 +4,7 @@ use crate::reader::byte_stream::{ByteStream, IntEncoding};
 use crate::reader::constant_pool::ConstantPool;
 use crate::reader::event::EventIterator;
 use crate::reader::metadata::Metadata;
-use crate::{Version, MAGIC, VERSION_1, VERSION_2};
+use crate::{Version, MAGIC};
 use std::fmt::Formatter;
 use std::io::{Cursor, Read, Seek};
 use std::{fmt, io};
@@ -154,8 +154,8 @@ impl<'a, T: Read + Seek> ChunkIterator<'a, T> {
             major: self.reader.stream.read_i16()?,
             minor: self.reader.stream.read_i16()?,
         };
-        match version {
-            VERSION_1 | VERSION_2 => {}
+        match version.major {
+            1 | 2 => {}
             _ => {
                 return Err(Error::UnsupportedVersion(version));
             }
@@ -243,8 +243,10 @@ mod tests {
 
     #[test]
     fn test_read_single_chunk() {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-data/profiler-wall.jfr");
-        let mut reader = JfrReader::new(File::open(path).unwrap());
+        // let mut reader = JfrReader::new(File::open(test_data("profiler-wall.jfr")).unwrap());
+        let mut reader = JfrReader::new(File::open(
+            "/Users/hokada/develop/src/github.com/moditect/jfr-analytics/src/test/resources/basic.jfr"
+        ).unwrap());
 
         let mut chunk_count = 0;
         for res in reader.chunks() {
@@ -306,9 +308,7 @@ mod tests {
 
     #[test]
     fn test_read_multiple_chunk() {
-        let path =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-data/profiler-multichunk.jfr");
-        let mut reader = JfrReader::new(File::open(path).unwrap());
+        let mut reader = JfrReader::new(File::open(test_data("profiler-multichunk.jfr")).unwrap());
         let chunk_count = reader.chunks().flatten().fold(0, |a, _| a + 1);
 
         assert_eq!(chunk_count, 3);
@@ -316,8 +316,7 @@ mod tests {
 
     #[test]
     fn test_read_recording() {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-data/recording.jfr");
-        let mut reader = JfrReader::new(File::open(path).unwrap());
+        let mut reader = JfrReader::new(File::open(test_data("recording.jfr")).unwrap());
 
         let mut chunk_count = 0;
         for (_reader, chunk) in reader.chunks().flatten() {
@@ -339,8 +338,7 @@ mod tests {
 
     #[test]
     fn test_de() {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-data/profiler-wall.jfr");
-        let mut reader = JfrReader::new(File::open(path).unwrap());
+        let mut reader = JfrReader::new(File::open(test_data("profiler-wall.jfr")).unwrap());
 
         let mut chunk_count = 0;
         for (mut reader, chunk) in reader.chunks().flatten() {
@@ -361,5 +359,36 @@ mod tests {
         }
 
         assert_eq!(chunk_count, 1);
+    }
+
+    #[test]
+    fn test_invalid_jfr() {
+        let mut reader = JfrReader::new(File::open(test_data("invalid.jfr")).unwrap());
+
+        assert!(reader.chunks().next().unwrap().is_err());
+    }
+
+    #[test]
+    fn test_jfr_2_1() {
+        let mut reader = JfrReader::new(File::open(test_data("recording-2_1.jfr")).unwrap());
+
+        let mut chunk_count = 0;
+        for chunk in reader.chunks() {
+            let (mut reader, chunk) = chunk.unwrap();
+            chunk_count += 1;
+            let count = reader
+                .events(&chunk)
+                .flatten()
+                .filter(|e| e.class.name() == "jdk.JavaMonitorWait")
+                .fold(0, |a, _| a + 1);
+            assert_eq!(count, 42);
+        }
+        assert_eq!(chunk_count, 1);
+    }
+
+    fn test_data(file_name: &str) -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("test-data")
+            .join(file_name)
     }
 }
