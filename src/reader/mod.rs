@@ -243,10 +243,7 @@ mod tests {
 
     #[test]
     fn test_read_single_chunk() {
-        // let mut reader = JfrReader::new(File::open(test_data("profiler-wall.jfr")).unwrap());
-        let mut reader = JfrReader::new(File::open(
-            "/Users/hokada/develop/src/github.com/moditect/jfr-analytics/src/test/resources/basic.jfr"
-        ).unwrap());
+        let mut reader = JfrReader::new(File::open(test_data("profiler-wall.jfr")).unwrap());
 
         let mut chunk_count = 0;
         for res in reader.chunks() {
