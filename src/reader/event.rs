@@ -36,6 +36,13 @@ impl<'a> Accessor<'a> {
         })
     }
 
+    pub fn get_field_raw(&self, name: &str) -> Option<Self> {
+        self.value.get_field_raw(name, self.chunk).map(|v| Self {
+            chunk: self.chunk,
+            value: v,
+        })
+    }
+
     pub fn resolve(self) -> Option<Self> {
         match self.value {
             ValueDescriptor::ConstantPool {
