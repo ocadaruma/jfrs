@@ -112,6 +112,9 @@ impl ChunkReader {
 
 pub struct ChunkIterator<'a, T> {
     reader: &'a mut JfrReader<T>,
+    // Whether to skip constant pool or not.
+    // This is used for the case where we want to parse the type metadata only.
+    skip_constant_pool: bool,
 }
 
 impl<'a, T: Read + Seek> Iterator for ChunkIterator<'a, T> {
@@ -176,7 +179,11 @@ impl<'a, T: Read + Seek> ChunkIterator<'a, T> {
         heap_stream.set_int_encoding(header.int_encoding());
 
         let metadata = Metadata::try_new(&mut heap_stream, &header)?;
-        let constant_pool = ConstantPool::try_new(&mut heap_stream, &header, &metadata)?;
+        let constant_pool = if self.skip_constant_pool {
+            ConstantPool::default()
+        } else {
+            ConstantPool::try_new(&mut heap_stream, &header, &metadata)?
+        };
 
         // update to next chunk start
         self.reader.chunk_start_position += chunk_size as u64;
@@ -224,7 +231,19 @@ where
     }
 
     pub fn chunks(&mut self) -> ChunkIterator<T> {
-        ChunkIterator { reader: self }
+        ChunkIterator {
+            reader: self,
+            skip_constant_pool: false,
+        }
+    }
+
+    /// Returns an iterator over chunk.
+    /// This iterator skips constant pool which is useful when you want to parse only type metadata.
+    pub fn chunk_metadata(&mut self) -> ChunkIterator<T> {
+        ChunkIterator {
+            reader: self,
+            skip_constant_pool: true,
+        }
     }
 }
 
@@ -380,6 +399,23 @@ mod tests {
                 .fold(0, |a, _| a + 1);
             assert_eq!(count, 42);
         }
+        assert_eq!(chunk_count, 1);
+    }
+
+    #[test]
+    fn test_read_chunk_metadata_only() {
+        let mut reader = JfrReader::new(File::open(test_data("recording.jfr")).unwrap());
+
+        let mut chunk_count = 0;
+        for (_, chunk) in reader.chunk_metadata().flatten() {
+            chunk_count += 1;
+            assert_eq!(chunk.constant_pool.inner.len(), 0);
+            assert_eq!(
+                chunk.metadata.type_pool.get(20).unwrap().name(),
+                "java.lang.Class"
+            );
+        }
+
         assert_eq!(chunk_count, 1);
     }
 
