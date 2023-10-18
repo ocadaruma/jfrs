@@ -11,7 +11,7 @@ use std::{fmt, io};
 
 mod byte_stream;
 mod constant_pool;
-mod de;
+pub mod de;
 pub mod event;
 pub mod metadata;
 pub mod type_descriptor;
@@ -258,6 +258,8 @@ mod tests {
     use crate::reader::types::jdk::ExecutionSample;
     use crate::reader::value_descriptor::{Primitive, ValueDescriptor};
 
+    use crate::reader::de::from_value_descriptor;
+    use crate::reader::types::builtin::StackTrace;
     use std::path::PathBuf;
 
     #[test]
@@ -359,18 +361,29 @@ mod tests {
         let mut chunk_count = 0;
         for (mut reader, chunk) in reader.chunks().flatten() {
             chunk_count += 1;
+            let mut events = 0;
             for event in reader
                 .events(&chunk)
                 .flatten()
                 .filter(|e| e.class.name.as_ref() == "jdk.ExecutionSample")
             {
                 let sample: ExecutionSample = from_event(&event).unwrap();
-                println!("{}", sample.sampled_thread.unwrap().os_name.unwrap());
-                // let f = event
-                //     .value()
-                //     .get_field("sampledThread")
-                //     .and_then(|t| t.get_field("osName"))
-                //     .unwrap();
+                let stack_trace: StackTrace = from_value_descriptor(
+                    &chunk,
+                    &event.value.get_field_raw("stackTrace", &chunk).unwrap(),
+                )
+                .unwrap();
+                if events == 0 {
+                    // we assert only the first event but still deserialize all events to make sure
+                    // deserializer can parse various events
+
+                    assert_eq!(
+                        sample.sampled_thread.unwrap().os_name.unwrap(),
+                        "G1 Main Marker"
+                    );
+                    assert_eq!(stack_trace.frames.len(), 11);
+                }
+                events += 1;
             }
         }
 

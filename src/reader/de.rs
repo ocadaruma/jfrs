@@ -6,7 +6,7 @@ use serde::de::{DeserializeSeed, IntoDeserializer, Visitor};
 use serde::forward_to_deserialize_any;
 use std::fmt::Display;
 
-pub struct Deserializer<'de> {
+struct Deserializer<'de> {
     chunk: &'de Chunk,
     value: &'de ValueDescriptor,
 }
@@ -31,6 +31,16 @@ where
     T: serde::de::Deserialize<'a>,
 {
     T::deserialize(Deserializer::new(event.chunk, &event.value))
+}
+
+pub fn from_value_descriptor<'a, T>(
+    chunk: &'a Chunk,
+    value: &'a ValueDescriptor,
+) -> crate::reader::Result<T>
+where
+    T: serde::de::Deserialize<'a>,
+{
+    T::deserialize(Deserializer::new(chunk, value))
 }
 
 struct ObjectDeserializer<'de> {
